@@ -149,6 +149,7 @@ class PollDemodSample(MultiParameter):
             path = '/{}/demods/{}/sample'.format(device, i)
             attr = 'timestamp'
             data = datadict[path][attr]/clockbase
+            data = data-data[0]
             returndata.append(data)
             
         return tuple(returndata)
