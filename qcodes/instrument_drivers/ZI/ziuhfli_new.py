@@ -35,7 +35,7 @@ class PollDemodSample(MultiParameter):
         nodes = self._instrument._poll_demod_list
         device = self._instrument.device
 
-        sigunits = {'x': 'V', 'y': 'V', 'r': 'V', 'phi': 'deg'}
+        sigunits = {'x': 'V', 'y': 'V', 'r': 'V', 'phi': 'deg'}        
         # set required/optional arguments for MultiParameter class
         names = []
         units = []
@@ -50,16 +50,30 @@ class PollDemodSample(MultiParameter):
             labels.append(label)
             units.append(sigunits[temp[-1]])
             numbers.append(temp[-3])
-        self.names = tuple(names)
-        self.units = tuple(units)
-        self.labels = tuple(labels)
 
+
+        # nodes to subscribe to '/dev.../demods/n/sample'. Only necessary once
+        # per demodulator. 
         tosub = set(numbers)
         for sub in tosub:
             setstr = '/{}/demods/{}/sample'\
                         .format(device, sub)
             tosubscribe.append(setstr)
         self._tosubscribe = tosubscribe
+        self._unique_demods = tosub
+
+        # add timestamps once per demodulator number
+        for sub in tosub:
+            name = 'poll_demod{}_timestamps'.format(sub)
+            label = 'Polled timestamps of demod {}'.format(sub)
+            unit = 's'
+            names.append(name)
+            labels.append(label)
+            units.append(unit)
+
+        self.names = tuple(names)
+        self.units = tuple(units)
+        self.labels = tuple(labels)
 
         self._instrument.poll_correctly_set_up = True
 
@@ -112,6 +126,9 @@ class PollDemodSample(MultiParameter):
         returndata = []
         nodes = self._instrument._poll_demod_list
         tosubscribe = self._tosubscribe
+        device = self._instrument.device
+        unique_demods = self._unique_demods
+        clockbase = self._instrument.clockbase.get()
 
         # compute r and phi
         for node in tosubscribe:
@@ -120,12 +137,20 @@ class PollDemodSample(MultiParameter):
             datadict[node]['phi'] = np.angle(datadict[node]['x'] 
                                     + 1j * datadict[node]['y'], deg=True)
 
+        # get data of user selected nodes
         for node in nodes:
             path = '/'.join(node.split('/')[:-1])
             attr = node.split('/')[-1]
             data = datadict[path][attr]
             returndata.append(data)
-
+        
+        # get timestamps
+        for i in unique_demods:
+            path = '/{}/demods/{}/sample'.format(device, i)
+            attr = 'timestamp'
+            data = datadict[path][attr]/clockbase
+            returndata.append(data)
+            
         return tuple(returndata)
 
 class ZIUHFLI(Instrument):
@@ -149,10 +174,17 @@ class ZIUHFLI(Instrument):
         self.daq.setDebugLevel(3)
 
         # instantiate modules
-        self.DAQmod = self.daq.dataAcquisitionModule()
+        self.DAQmod = self.daq.dataAcquisitionModule()        
 
         # add instrument parameters        
         #----------------------------- Lock-In --------------------------------
+
+        ### clockbase ###
+        self.add_parameter('clockbase',
+                            label = 'Clockbase of instrument',
+                            unit = 'timestamps/s',
+                            get_cmd = partial(self._getter_toplvl, 
+                                                'clockbase', 1))
         
         ### oscillators ###
         for osc in range(1,9):
@@ -598,7 +630,7 @@ class ZIUHFLI(Instrument):
                                     val_mapping = {'off': 0, 'on': 1},
                                     vals = vals.OnOff())
 
-    def _setter(self, module: str, number: int, mode: str, setting: str,
+    def _setter(self, module: str, number: int, mode: int, setting: str,
                  value) -> None:
         """
         General function to set/send settings to the device.
@@ -651,6 +683,32 @@ class ZIUHFLI(Instrument):
         # Weird exception, samplingrate returns a string
         return value
     
+    def _getter_toplvl(self, module: str, mode: int) -> Union[float, int, str, dict]:
+            """
+            General get function for generic parameters. Note that some parameters
+            use more specialised setter/getters.
+            The module (e.g demodulator, input, output,..) number is counted in a
+            zero indexed fashion.
+
+            Args:
+                module (str): The top level module (eg. clockbase, ...)
+                    we want to know the value of.
+
+            Returns:
+                inquered value
+            """
+
+            querystr = '/{}/{}'.format(self.device, module)
+            log.debug("getting %s", querystr)
+            if mode == 0:
+                value = self.daq.getInt(querystr)
+            elif mode == 1:
+                value = self.daq.getDouble(querystr)
+            else:
+                raise RuntimeError("Invalid mode supplied")
+            # Weird exception, samplingrate returns a string
+            return value
+
     def _get_demod_sample(self, number: int, demod_par: str) -> float:
         
         log.debug("getting demod {} param {}".format(number, demod_par))
