@@ -32,6 +32,7 @@ class PollDemodSample(MultiParameter):
 
         log.info('Build poll.')
 
+        params = self._instrument.parameters
         nodes = self._instrument._poll_demod_list
         device = self._instrument.device
 
@@ -63,12 +64,20 @@ class PollDemodSample(MultiParameter):
     
         # add timestamps once per demodulator number
         for sub in tosub:
-            name = 'poll_demod{}_timestamps'.format(str(int(sub)+1))
-            label = 'Polled timestamps of demod {}'.format(str(int(sub)+1))
+            num = int(sub) + 1
+            name = 'poll_demod{}_timestamps'.format(num)
+            label = 'Polled timestamps of demod {}'.format(num)
             unit = 's'
             names.append(name)
             labels.append(label)
             units.append(unit)
+
+        # enable demodulator if not already enabled
+        for sub in tosub:
+            num = int(sub) + 1
+            val = params['demod{}_enable'.format(num)].get()
+            if val == 'off':
+                val = params['demod{}_enable'.format(num)].set('on')
 
         # update required arguments
         self.names = tuple(names)
@@ -406,7 +415,7 @@ class ZIUHFLI(Instrument):
                                 unit = unit,
                                 get_cmd = partial(self._get_demod_sample, 
                                             demod-1, demod_par),
-                                snapshot_value = False)
+                                snapshot_value = True)
                                 
         ### poll demod ###
         self.add_parameter('PollDemod',
@@ -721,18 +730,28 @@ class ZIUHFLI(Instrument):
             return value
 
     def _get_demod_sample(self, number: int, demod_par: str) -> float:
-        
+
+        params = self.parameters        
         log.debug("getting demod {} param {}".format(number, demod_par))
         
         if demod_par not in ['x', 'y', 'r', 'phi']:
             raise RuntimeError('Invalid demodulator parameter. Valid are: \
                                 x, y, r, phi')
-
+    
         mode = 2
         module = 'demods'
         setting = 'sample'
-        datadict = cast(dict, self._getter(module, number, mode, setting))
-        
+
+        # Check whether demod is enabled. If not enable it for getting the 
+        # sample.
+        demod_on = params['demod{}_enable'.format(number+1)]
+        if demod_on.get() == 'off':
+            demod_on.set('on')
+            datadict = cast(dict, self._getter(module, number, mode, setting))
+            demod_on.set('off')
+        else:
+            datadict = cast(dict, self._getter(module, number, mode, setting))
+
         datadict['r'] = np.abs(datadict['x'] + 1j * datadict['y'])
         datadict['phi'] = np.angle(datadict['x'] + 1j * datadict['y'], deg=True)
         
@@ -996,6 +1015,7 @@ class ZIUHFLI(Instrument):
         else:
             self._poll_demod_list.remove(setstr)
 
-    def list_poll_demod(self) -> Union[float, str, list, dict]:
+    def list_poll_demod(self) -> Union[float, str, list]:
 
-        return self._poll_demod_list
+        returnlist = self._poll_demod_list
+        return returnlist
