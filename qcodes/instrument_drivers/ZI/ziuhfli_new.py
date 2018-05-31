@@ -53,7 +53,6 @@ class PollDemodSample(MultiParameter):
             units.append(sigunits[temp[-1]])
             numbers.append(temp[-3])
 
-
         # nodes to subscribe to '/dev.../demods/n/sample'. Only necessary once
         # per demodulator. 
         tosub = set(numbers)
@@ -1014,6 +1013,12 @@ class ZIUHFLI(Instrument):
                         .format(setstr))
         else:
             self._poll_demod_list.remove(setstr)
+    
+    def remove_poll_demod_all(self) -> None:    
+        """
+        Removes all signals from polling.
+        """
+        self._poll_demod_list.clear()
 
     def list_poll_demod(self) -> Union[float, str, list]:
 
