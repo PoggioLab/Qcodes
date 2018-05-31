@@ -44,8 +44,9 @@ class PollDemodSample(MultiParameter):
         tosubscribe = []
         for node in nodes:
             temp = node.split('/')
-            name = 'poll_demod{}_{}'.format(temp[-3], temp[-1])
-            label = 'Polled {} sample of demod {}'.format(temp[-1], temp[-3])
+            name = 'poll_demod{}_{}'.format(str(int(temp[-3])+1), temp[-1])
+            label = 'Polled {} sample of demod {}'.format(temp[-1],
+                        str(int(temp[-3])+1))
             names.append(name)
             labels.append(label)
             units.append(sigunits[temp[-1]])
@@ -64,8 +65,8 @@ class PollDemodSample(MultiParameter):
 
         # add timestamps once per demodulator number
         for sub in tosub:
-            name = 'poll_demod{}_timestamps'.format(sub)
-            label = 'Polled timestamps of demod {}'.format(sub)
+            name = 'poll_demod{}_timestamps'.format(str(int(sub)+1))
+            label = 'Polled timestamps of demod {}'.format(str(int(sub)+1))
             unit = 's'
             names.append(name)
             labels.append(label)
@@ -955,7 +956,7 @@ class ZIUHFLI(Instrument):
         module = 'demods'
         setting = 'sample'
         setstr = '/{}/{}/{}/{}/{}'\
-                    .format(self.device, module, number, setting, node)
+                    .format(self.device, module, number-1, setting, node)
 
         if setstr not in self._poll_demod_list:
             self._poll_demod_list.append(setstr)
@@ -978,7 +979,7 @@ class ZIUHFLI(Instrument):
         module = 'demods'
         setting = 'sample'
         setstr = '/{}/{}/{}/{}/{}'\
-                    .format(self.device, module, number, setting, node)
+                    .format(self.device, module, number-1, setting, node)
 
         if setstr not in self._poll_demod_list:
             log.warning('Can not remove {} since it was not previously added'
@@ -986,3 +987,6 @@ class ZIUHFLI(Instrument):
         else:
             self._poll_demod_list.remove(setstr)
 
+    def list_poll_demod(self) -> Union[float, str, list, dict]:
+
+        return self._poll_demod_list
