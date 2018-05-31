@@ -59,9 +59,7 @@ class PollDemodSample(MultiParameter):
             setstr = '/{}/demods/{}/sample'\
                         .format(device, sub)
             tosubscribe.append(setstr)
-        self._tosubscribe = tosubscribe
-        self._unique_demods = tosub
-
+    
         # add timestamps once per demodulator number
         for sub in tosub:
             name = 'poll_demod{}_timestamps'.format(sub)
@@ -71,9 +69,13 @@ class PollDemodSample(MultiParameter):
             labels.append(label)
             units.append(unit)
 
+        # update required arguments
         self.names = tuple(names)
         self.units = tuple(units)
         self.labels = tuple(labels)
+
+        self._tosubscribe = tosubscribe
+        self._unique_demods = tosub
 
         self._instrument.poll_correctly_set_up = True
 
@@ -151,7 +153,14 @@ class PollDemodSample(MultiParameter):
             data = datadict[path][attr]/clockbase
             data = data-data[0]
             returndata.append(data)
-            
+        
+        # update shapes
+        shape_list = []
+        for arr in returndata:
+            l = (len(arr),)
+            shape_list.append(l)
+        self.shapes = tuple(shape_list)
+
         return tuple(returndata)
 
 class ZIUHFLI(Instrument):
