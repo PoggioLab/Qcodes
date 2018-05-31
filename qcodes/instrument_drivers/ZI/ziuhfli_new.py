@@ -54,19 +54,16 @@ class PollDemodSample(MultiParameter):
             numbers.append(temp[-3])
 
         # nodes to subscribe to '/dev.../demods/n/sample'. Only necessary once
-        # per demodulator. 
+        # per demodulator. Set names/labels/units as well.
         tosub = set(numbers)
         for sub in tosub:
             setstr = '/{}/demods/{}/sample'\
                         .format(device, sub)
-            tosubscribe.append(setstr)
-    
-        # add timestamps once per demodulator number
-        for sub in tosub:
             num = int(sub) + 1
             name = 'poll_demod{}_timestamps'.format(num)
             label = 'Polled timestamps of demod {}'.format(num)
             unit = 's'
+            tosubscribe.append(setstr)
             names.append(name)
             labels.append(label)
             units.append(unit)
@@ -1013,12 +1010,16 @@ class ZIUHFLI(Instrument):
                         .format(setstr))
         else:
             self._poll_demod_list.remove(setstr)
+
+        self.poll_correctly_set_up = False
     
     def remove_poll_demod_all(self) -> None:    
         """
         Removes all signals from polling.
         """
         self._poll_demod_list.clear()
+
+        self.poll_correctly_set_up = False
 
     def list_poll_demod(self) -> Union[float, str, list]:
 
