@@ -5,8 +5,140 @@ from time import sleep, time
 
 from qcodes import validators as vals
 from qcodes import Instrument, InstrumentChannel, VisaInstrument
+from qcodes import Parameter
 
 log = logging.getLogger(__name__)
+
+DLCpro_val_dict = {
+    int: vals.Ints(),
+    float: vals.Numbers(),
+    str: vals.Strings(),
+    bool: vals.Bool()
+}
+
+DLCpro_get_parser_dict = {
+    int: int,
+    float: float,
+    str: lambda s: s.strip('\"'),
+    bool: None
+}
+
+DLCpro_set_parser_dict = {
+    int: None,
+    float: None,
+    str: lambda s: f'\"{s}\"',
+    bool: None
+}
+
+def make_cmd(cmd_type, name, arg=None):
+    # cmd_type in param-ref, param-set!, param-disp, exec
+    # name is parameter or command name
+    # arg 
+    arg_str = f' {arg!s}' if arg else ''
+    return f'({cmd_type!s} \'{name!s}{arg_str!s})'
+
+def DLCpro_val(val_type):
+    # val_type in int, float, bool, or tuple of the previous
+    if type(val_type) is tuple:
+        return Tuple((DLCpro_val_dict[v] for v in val_type))
+    elif val_type in DLCpro_val_dict:
+        return DLCpro_val_dict[val_type]
+    else:
+        raise ValueError(f"{val_type} not in {DLCpro_val_dict}")
+
+def DLCpro_mapping(val_type):
+    if val_type is bool:
+        return {True: "#t", False: "#f"}
+    else:
+        return None
+
+def make_get_parser(val_type):
+    if type(val_type) is tuple:
+        return lambda tup: (DLCpro_get_parser_dict[v](e)
+                            for v, e in zip(val_type, tup))
+    elif val_type in DLCpro_get_parser_dict:
+        return DLCpro_get_parser_dict[val_type]
+    else:
+        raise ValueError(f"{val_type} not in {DLCpro_get_parser_dict}")
+    
+def make_set_parser(val_type):
+    if type(val_type) is tuple:
+        return lambda tup: (DLCpro_set_parser_dict[v](e)
+                            for v, e in zip(val_type, tup))
+    elif val_type in DLCpro_set_parser_dict:
+        return DLCpro_set_parser_dict[val_type]
+    else:
+        raise ValueError(f"{val_type} not in {DLCpro_set_parser_dict}")
+
+
+class Tuple(vals.Validator):
+    """
+    requires a tuple of values which validate their corresponding
+    validator
+    """
+
+    def __init__(self, validators: tuple) -> None:
+        self._validators = validators
+        self._len = len(self._validators)
+
+    def validate(self, value: tuple, context: str='') -> None:
+        if len(value) != self._len:
+            raise ValueError(
+                f'{value!r} is invalid, length must be '
+                f'{self._len}; {context}')
+
+        for i in range(self._len):
+                self._validators[i].validate(value[i], context)
+        
+    def __repr__(self) -> str:
+        _ = ', '.join([f"{val!r}" for val in self._validators])
+        return f'<Tuple({_})>'
+
+	
+class DLCproGenericError(Exception):
+    pass
+
+
+class DLCproReadOnlyParam(Parameter):
+    def __init__(self, name, instrument, val_type, **kwargs):
+        scheme_name = name.replace('_','-')
+        super().__init__(name,
+                         get_cmd=make_cmd('param-ref', scheme_name),
+                         get_parser=make_get_parser(val_type),
+                         val_mapping=DLCpro_mapping(val_type),
+                         vals=DLCpro_val(val_type),
+                         **kwargs)
+        self._instrument = instrument
+
+
+class DLCproReadWriteParam(Parameter):
+    def __init__(self, name, instrument, val_type, **kwargs):
+        scheme_name = name.replace('_','-')
+        super().__init__(name,
+                         get_cmd=make_cmd('param-ref', scheme_name),
+                         get_parser=make_get_parser(val_type),
+                         set_cmd=make_cmd('param-set!', scheme_name, '{}'),
+                         set_parser=make_set_parser(val_type),
+                         val_mapping=DLCpro_mapping(val_type),
+                         vals=DLCpro_val(val_type),
+                         **kwargs)
+        self._instrument = instrument
+
+
+class DLCproLaser1(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_submodule('ctl', DLCproLaser1Ctl(self, 'ctl'))
+
+
+class DLCproLaser1Ctl(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_parameter(name='wavelength_set',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float)
 
 
 class DLCpro(VisaInstrument):
@@ -14,7 +146,7 @@ class DLCpro(VisaInstrument):
     QCodeS driver for TOPTICA DLCpro laser controller
     """
 
-    def __init__(self, name, address=None, **kwargs):
+    def __init__(self, name, address, **kwargs):
         """
         Args:
             name: The name of the instrument
@@ -28,10 +160,28 @@ class DLCpro(VisaInstrument):
         self.visa_handle.write_termination = '\n'
 
         self.welcome_msg = self.read_raw()[2:]
-        # Wait for terminal to fire up and clear welcome message
-        #sleep(0.1)
-        #self.visa_handle.clear()
 
+        self.add_submodule('laser1', DLCproLaser1(self, 'laser1'))
+
+        self.connect_message()
+
+    def get_idn(self):
+        vendor = "TOPTICA"
+        model = self.ask(self.make_cmd("param-ref",
+                                       "system-type")).strip('\"')
+        serial = self.ask(self.make_cmd("param-ref",
+                                        "serial-number")).strip('\"')
+        firmware = self.ask(self.make_cmd("param-ref",
+                                          "fw-ver")).strip('\"')
+        return {'vendor': vendor, 'model': model,
+                'serial': serial, 'firmware': firmware}
+
+    def make_cmd(self, cmd_type, name, arg=None):
+        # cmd_type in param-ref, param-set!, param-disp, exec
+        # name is parameter or command name
+        # arg 
+        arg_str = f' {arg!s}' if arg else ''
+        return f'({cmd_type!s} \'{name!s}{arg_str})'
 
     def write_raw(self, cmd):
         """
@@ -89,12 +239,10 @@ class DLCpro(VisaInstrument):
 
         log.debug(f"Reading from instrument: {msg}")
 
-        # if err_check == 'ERROR':
-        #     if answer.strip() == 'Wrong axis id':
-        #         raise ANC300WrongAxisId
-        #     elif answer.strip() == 'Wrong axis type':
-        #         raise ANC300WrongAxisType
-        #     else:
-        #         raise ANC300GenericError(answer.strip())
+        err_pattern = re.compile(r'Error:\s(-\d+)\s([\w\s]+)')
+        match = err_pattern.search(msg)
+        if match is not None:
+            raise DLCproGenericError({"code":int(match.group(1)),
+                                      "message":match.group(2)})
 
         return msg
