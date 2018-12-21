@@ -15,7 +15,7 @@ class TraceSetPointsChanged(Exception):
     pass
 
 
-class WaveformArray(ArrayParameter):
+class WaveformArraySeq(ArrayParameter):
     """
     Will return a waveform from oscilloscope
     """
@@ -121,6 +121,98 @@ class WaveformArray(ArrayParameter):
 
         return out_array
 
+
+class WaveformArray(ArrayParameter):
+    """
+    Will return a waveform from oscilloscope
+    """
+
+    def __init__(self, name, instrument, channel_id):
+        super().__init__(name,
+                         shape=(1024,),
+                         label='Voltage',
+                         unit='V',
+                         setpoint_names=('Time',),
+                         setpoint_labels=(f'{channel_id} time series',),
+                         setpoint_units=('s',),
+                         docstring='raw waveform from the scope',
+                         )
+
+        self._channel_id = channel_id
+        self._instrument = instrument
+
+    def prepare_waveform(self):
+        """
+        Prepare the scope for returning waveform data
+        """
+        # To calculate set points, we must have the full preamble
+        # For the instrument to return the full preamble, the channel
+        # in question must be displayed
+
+        # shorthand
+        instr = self._instrument
+
+        # acquire waveform description
+        instr.write("{}:WF? DESC".format(self._channel_id))
+        wavedesc = instr._parent._read_ieee_block()
+
+        # extract Time setpoints info
+        self.Nsamples, = struct.unpack_from('l', wavedesc, 116)
+        self.Nseqs, = struct.unpack_from('l', wavedesc, 144)
+        self.horz_dt, self.horz_offset = struct.unpack_from('fd', wavedesc, 176)
+        self.Npts = int(self.Nsamples/self.Nseqs)
+        self.time_setpoints = tuple(self.horz_offset + self.horz_dt
+                                    * np.arange(self.Npts))
+
+        # set setpoints info
+        if (self.Nseqs != 1):
+            raise ValueError(f'Number of sequences {self.Nseqs} should'
+                             'be 1.')
+
+        self.setpoints = (self.time_setpoints,)
+        self.shape = (self.Npts,)
+
+        # make this on a per channel basis?
+        self._instrument._parent.trace_ready = True
+
+    def get_raw(self):
+        # when get is called the setpoints have to be known already
+        # (saving data issue). Therefor create additional prepare function that
+        # queries for the size.
+        # check if already prepared
+        if not self._instrument._parent.trace_ready:
+            raise TraceNotReady('Please run prepare_curvedata to prepare '
+                                'the scope for acquiring a trace.')
+
+        # shorthand
+        instr = self._instrument
+
+        instr.write("{}:WF?".format(self._channel_id))
+        wave = instr._parent._read_ieee_block()
+
+        comm_type, comm_order = struct.unpack_from('??', wave, 32)
+        dat1_offset = np.sum(struct.unpack_from('6l', wave, 36))
+        Nsamples, = struct.unpack_from('l', wave, 116)
+        Nseqs, = struct.unpack_from('l', wave, 144)
+        vert_gain, vert_offset = struct.unpack_from('ff', wave, 156)
+        horz_dt, horz_offset = struct.unpack_from('fd', wave, 176)
+
+        if ((Nsamples,Nseqs,horz_dt,horz_offset) 
+            != (self.Nsamples,self.Nseqs,self.horz_dt,self.horz_offset)):
+            raise TraceSetPointsChanged('prepared setpoints do not match \
+                                        with waveform, run prepare_waveform')
+
+        Npts = int(Nsamples/Nseqs)
+
+        dat1_array = np.ndarray((Npts,),
+                                'h' if comm_type else 'b',
+                                wave, dat1_offset)
+        # scale y values
+        out_array = vert_offset + vert_gain * dat1_array
+
+        return out_array
+
+
 class TD44MXsBChannel(InstrumentChannel):
     def __init__(self, parent: Instrument, name: str, channel_id: str) -> None:
         """
@@ -134,6 +226,11 @@ class TD44MXsBChannel(InstrumentChannel):
 
         self.add_parameter(name='waveform',
                            parameter_class=WaveformArray,
+                           channel_id=channel_id
+                           )
+
+        self.add_parameter(name='waveform_seq',
+                           parameter_class=WaveformArraySeq,
                            channel_id=channel_id
                            )
 
