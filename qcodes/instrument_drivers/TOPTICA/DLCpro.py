@@ -101,27 +101,39 @@ class DLCproGenericError(Exception):
 
 class DLCproReadOnlyParam(Parameter):
     def __init__(self, name, instrument, val_type, **kwargs):
-        scheme_name = name.replace('_','-')
-        super().__init__(name,
-                         get_cmd=make_cmd('param-ref', scheme_name),
-                         get_parser=make_get_parser(val_type),
-                         val_mapping=DLCpro_mapping(val_type),
-                         vals=DLCpro_val(val_type),
-                         **kwargs)
+        scheme_name = ':'.join(instrument.name.split('_')[1:])
+        scheme_name += ':' + name.replace('_','-')
+
+        super().__init__(
+            name,
+            get_cmd=lambda: instrument.ask(make_cmd('param-ref',
+                                                    scheme_name)),
+            get_parser=make_get_parser(val_type),
+            val_mapping=DLCpro_mapping(val_type),
+            vals=DLCpro_val(val_type),
+            **kwargs)
+
         self._instrument = instrument
 
 
 class DLCproReadWriteParam(Parameter):
     def __init__(self, name, instrument, val_type, **kwargs):
-        scheme_name = name.replace('_','-')
-        super().__init__(name,
-                         get_cmd=make_cmd('param-ref', scheme_name),
-                         get_parser=make_get_parser(val_type),
-                         set_cmd=make_cmd('param-set!', scheme_name, '{}'),
-                         set_parser=make_set_parser(val_type),
-                         val_mapping=DLCpro_mapping(val_type),
-                         vals=DLCpro_val(val_type),
-                         **kwargs)
+        scheme_name = ':'.join(instrument.name.split('_')[1:])
+        scheme_name += ':' + name.replace('_','-')
+
+        super().__init__(
+            name,
+            get_cmd=lambda: instrument.ask(make_cmd('param-ref',
+                                                    scheme_name)),
+            get_parser=make_get_parser(val_type),
+            set_cmd=lambda val: instrument.ask(make_cmd('param-set!',
+                                                        scheme_name,
+                                                        val)),
+            set_parser=make_set_parser(val_type),
+            val_mapping=DLCpro_mapping(val_type),
+            vals=DLCpro_val(val_type),
+            **kwargs)
+            
         self._instrument = instrument
 
 
@@ -167,21 +179,14 @@ class DLCpro(VisaInstrument):
 
     def get_idn(self):
         vendor = "TOPTICA"
-        model = self.ask(self.make_cmd("param-ref",
-                                       "system-type")).strip('\"')
-        serial = self.ask(self.make_cmd("param-ref",
-                                        "serial-number")).strip('\"')
-        firmware = self.ask(self.make_cmd("param-ref",
-                                          "fw-ver")).strip('\"')
+        model = self.ask(make_cmd("param-ref",
+                                  "system-type")).strip('\"')
+        serial = self.ask(make_cmd("param-ref",
+                                   "serial-number")).strip('\"')
+        firmware = self.ask(make_cmd("param-ref",
+                                     "fw-ver")).strip('\"')
         return {'vendor': vendor, 'model': model,
                 'serial': serial, 'firmware': firmware}
-
-    def make_cmd(self, cmd_type, name, arg=None):
-        # cmd_type in param-ref, param-set!, param-disp, exec
-        # name is parameter or command name
-        # arg 
-        arg_str = f' {arg!s}' if arg else ''
-        return f'({cmd_type!s} \'{name!s}{arg_str})'
 
     def write_raw(self, cmd):
         """
@@ -239,7 +244,7 @@ class DLCpro(VisaInstrument):
 
         log.debug(f"Reading from instrument: {msg}")
 
-        err_pattern = re.compile(r'Error:\s(-\d+)\s([\w\s]+)')
+        err_pattern = re.compile(r'Error:\s+(-\d+)\s+([\w\s]+)')
         match = err_pattern.search(msg)
         if match is not None:
             raise DLCproGenericError({"code":int(match.group(1)),
