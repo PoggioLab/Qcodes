@@ -133,7 +133,7 @@ class DLCproReadWriteParam(Parameter):
             val_mapping=DLCpro_mapping(val_type),
             vals=DLCpro_val(val_type),
             **kwargs)
-            
+
         self._instrument = instrument
 
 
@@ -148,9 +148,17 @@ class DLCproLaser1Ctl(InstrumentChannel):
     def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
         super().__init__(parent, name, **kwargs)
 
+        self.add_parameter(name='wavelength_act',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=float)
+
         self.add_parameter(name='wavelength_set',
                            parameter_class=DLCproReadWriteParam,
                            val_type=float)
+
+        self.add_parameter(name='state',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=int)
 
 
 class DLCpro(VisaInstrument):
