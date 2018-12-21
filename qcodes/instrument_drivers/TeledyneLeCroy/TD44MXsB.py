@@ -155,7 +155,7 @@ class TD44MXsB(VisaInstrument):
         super().__init__(name, address, **kwargs)
 
         # set communication format (from MAUI Remote Control Manual)
-        self.timeout = 5000
+        self.visa_handle.timeout = 5000
         self.visa_handle.clear()
         self.write("COMM_HEADER OFF")
         self.write("COMM_ORDER LO")
