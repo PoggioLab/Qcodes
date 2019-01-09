@@ -2,9 +2,52 @@ from functools import partial
 from qcodes import Instrument, InstrumentChannel, VisaInstrument
 from qcodes import ArrayParameter
 from qcodes.tests.instrument_mocks import setpoint_generator
+from qcodes.utils import validators as vals
 
 import numpy as np
 import struct
+import re
+
+multiplier_dict = {
+    'P': 1e-12,
+    'N': 1e-9,
+    'U': 1e-6,
+    'M': 1e-3,
+    'K': 1e3
+}
+
+def ans_parser(ans, unit=None, parser=str):
+            """
+            Parse "{value} [{multiplier}{unit}]" type answers from TD44MXsB.
+
+            Args:
+                ans: The answer from the instrument
+                unit: The expected unit(s). String of list of strings. Defaults to None.
+                parser: Function to use to parse the value.
+
+            Returns parser(value).
+            """
+            ans = ans.strip()
+            if not ans:
+                raise ValueError('Empty answer.')
+
+            if not unit: #None or empty string                
+                val = ans
+            else:
+                ans_pattern = re.compile(rf'(.+) ([A-Z]*){unit}')
+                ans_match = ans_pattern.search(ans)
+                if ans_match is not None:
+                    val, modifier = ans_match.group(1,2)
+                    val = float(val)
+                    val *= 1 if not modifier else multiplier_dict[modifier]
+
+                else:
+                    raise ValueError(f'Unexpected answer {ans!r}.')
+
+            if parser is int:
+                val = float(val)
+
+            return parser(val)
 
 
 class TraceNotReady(Exception):
@@ -234,6 +277,24 @@ class TD44MXsBChannel(InstrumentChannel):
                            channel_id=channel_id
                            )
 
+        self.add_parameter(name='volt_div',
+                           label='vertical sensitivity',
+                           unit='V',
+                           set_cmd=f'{channel_id}:VOLT_DIV {{}} V',
+                           get_cmd=f'{channel_id}:VOLT_DIV?',
+                           vals=vals.Numbers(min_value=0),
+                           get_parser=partial(ans_parser, parser=float)
+                           )
+
+        self.add_parameter(name='offset',
+                           label='vertical offset',
+                           unit='V',
+                           set_cmd=f'{channel_id}:OFFSET {{}} V',
+                           get_cmd=f'{channel_id}:OFFSET?',
+                           vals=vals.Numbers(),
+                           get_parser=partial(ans_parser, parser=float)
+                           )
+
         self.channel_id = channel_id
 
 
@@ -242,7 +303,7 @@ class TD44MXsB(VisaInstrument):
     QCodeS driver for Teledyne LeCroy Wavesurfer 44Mxs-B oscilloscope
     """
 
-    def __init__(self, name, address=None, **kwargs):
+    def __init__(self, name, address=None, termination='\n', **kwargs):
         """
         Args:
             name: The name of the instrument
@@ -258,6 +319,99 @@ class TD44MXsB(VisaInstrument):
         self.write("COMM_ORDER LO")
         self.write("COMM_FORMAT OFF,BYTE,BIN")
 
+        self.add_parameter(name='trig_mode',
+                           label='trigger mode',
+                           set_cmd='TRIG_MODE {}',
+                           get_cmd='TRIG_MODE?',
+                           vals=vals.Enum('auto', 'norm', 'single', 'stop'),
+                           get_parser=ans_parser
+                           )
+
+        self.add_parameter(name='trig_delay',
+                           label='trigger delay',
+                           unit='s',
+                           set_cmd='TRIG_DELAY {} S',
+                           get_cmd='TRIG_DELAY?',
+                           vals=vals.Numbers(),
+                           get_parser=partial(ans_parser, parser=float)
+                           )
+                           
+        self.add_parameter(name='horizontal_origin',
+                           label='horizontal origin',
+                           unit='div',
+                           set_cmd="VBS 'app.Acquisition.Horizontal.HorOffsetOrigin={}'",
+                           get_cmd="VBS? 'Return=app.Acquisition.Horizontal.HorOffsetOrigin'",
+                           vals=vals.Numbers(0, 10),
+                           get_parser=partial(ans_parser, parser=float)
+                           )
+
+        self.add_parameter(name='time_div',
+                           label='horizontal sensitivity',
+                           unit='s',
+                           set_cmd='TIME_DIV {} S',
+                           get_cmd='TIME_DIV?',
+                           vals=vals.Numbers(min_value=0),
+                           get_parser=partial(ans_parser, parser=float)
+                           )
+
+        self.add_parameter(name='memory_size',
+                           label='number of samples',
+                           set_cmd='MEMORY_SIZE {}',
+                           get_cmd='MEMORY_SIZE?',
+                           vals=vals.Ints(min_value=0),
+                           get_parser=partial(ans_parser, parser=int)
+                           )
+
+        self.add_parameter(name='sequence',
+                           label='sequence mode status',
+                           set_cmd='SEQUENCE {}',
+                           get_cmd='SEQUENCE?',
+                           vals=vals.Enum('off', 'on'),
+                           get_parser=lambda ans: ans.strip().split()[0]
+                           )
+
+        self.add_parameter(name='seq_segments',
+                           label='number of segments in sequence',
+                           set_cmd="VBS 'app.Acquisition.Horizontal.NumSegments={}'",
+                           get_cmd="VBS? 'Return=app.Acquisition.Horizontal.NumSegments'",
+                           vals=vals.Ints(min_value=0),
+                           get_parser=ans_parser
+                           )
+
+        # command for VBS + enum types: """ VSB 'cmd = "enum" ' """, see MAUI manual
+        self.add_parameter(name='trig_type',
+                           label='trigger type',
+                           set_cmd="""VBS 'app.Acquisition.Trigger.Type="{}" ' """,
+                           get_cmd="VBS? 'Return=app.Acquisition.Trigger.Type'",
+                           vals=vals.Enum("edge", "width", "qualified", "interval", "glitch",
+                                          "TV", "pattern", "dropout", "runt", "slewrate"),
+                           get_parser=ans_parser
+                           )
+
+        self.add_parameter(name='trig_source',
+                           label='trigger source',
+                           set_cmd="""VBS 'app.Acquisition.Trigger.Edge.Source="{}" ' """,
+                           get_cmd="VBS? 'Return=app.Acquisition.Trigger.Edge.Source'",
+                           vals=vals.Enum("C1", "C2", "C3", "C4", "Ext", "Extdivide10", "line"),
+                           get_parser=ans_parser
+                           )
+
+        self.add_parameter(name='trig_level',
+                           label='trigger level',
+                           unit='V',
+                           set_cmd='TRIG_LEVEL {} S',
+                           get_cmd='TRIG_LEVEL?',
+                           vals=vals.Numbers(),
+                           get_parser=partial(ans_parser, parser=float)
+                           )
+
+        self.add_parameter(name='trig_slope',
+                           label='trigger slope',
+                           set_cmd='TRIG_SLOPE {}',
+                           get_cmd='TRIG_SLOPE?',
+                           vals=vals.Enum('neg', 'pos'),
+                           get_parser=ans_parser
+                           )
         
         for ch in range(1, 5):
             ch_name = 'C{}'.format(ch)
