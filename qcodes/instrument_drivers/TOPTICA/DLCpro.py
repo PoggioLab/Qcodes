@@ -150,11 +150,15 @@ class DLCproLaser1Ctl(InstrumentChannel):
 
         self.add_parameter(name='wavelength_act',
                            parameter_class=DLCproReadOnlyParam,
-                           val_type=float)
+                           val_type=float,
+                           label='wavelength',
+                           unit='nm')
 
         self.add_parameter(name='wavelength_set',
                            parameter_class=DLCproReadWriteParam,
-                           val_type=float)
+                           val_type=float,
+                           label='target wavelength',
+                           unit='nm')
 
         self.add_parameter(name='state',
                            parameter_class=DLCproReadOnlyParam,
