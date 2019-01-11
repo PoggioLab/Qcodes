@@ -79,7 +79,7 @@ class WaveformArraySeq(ArrayParameter):
         self._channel_id = channel_id
         self._instrument = instrument
 
-    def prepare_waveform(self, seq_setpoints=None, seq_name=None, seq_labels=None,
+    def prepare_waveform(self, seq_setpoints=None, seq_name=None, seq_label=None,
                          seq_unit=None):
         """
         Prepare the scope for returning waveform data
@@ -113,13 +113,14 @@ class WaveformArraySeq(ArrayParameter):
                               else tuple(range(self.Nseqs)))
 
         if seq_name is not None:
-            self.setpoint_names.append(seq_name)
+            self.setpoint_names = (seq_name,'Time')
 
         if seq_unit is not None:
-            self.setpoint_units.append(seq_unit)
+            self.setpoint_units = (seq_unit,'s')
 
-        if seq_labels is not None:
-            self.setpoint_labels.append(seq_labels)
+        if seq_label is not None:
+            self.setpoint_labels = (seq_label,
+                                   f'{self._channel_id} time series')
 
         self.setpoints = setpoint_generator(self.seq_setpoints, self.time_setpoints)
         self.shape = (self.Nseqs, self.Npts)
@@ -367,7 +368,7 @@ class TD44MXsB(VisaInstrument):
                            set_cmd='SEQUENCE {}',
                            get_cmd='SEQUENCE?',
                            vals=vals.Enum('off', 'on'),
-                           get_parser=lambda ans: ans.strip().split()[0]
+                           get_parser=lambda ans: ans.strip().split(',')[0]
                            )
 
         self.add_parameter(name='seq_segments',
