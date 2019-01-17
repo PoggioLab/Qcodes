@@ -20,15 +20,17 @@ class AIRead(MultiParameter):
 
         self._task = instrument
 
-    def prepare_AIRead(self):
+    def prepare_AIRead(self, setpointlist=None):
         clock = self._task.clock
 
         N_chans = self._task.number_of_channels.get()
 
-        # setpoints
-        N_samp = clock.samp_quant_samp_per_chan.get()
-        samp_rate = clock.samp_clk_rate.get()
-        setpointlist = tuple(np.linspace(0, (N_samp-1)/samp_rate, N_samp))
+        if setpointlist is None:
+            # setpoints
+            N_samp = clock.samp_quant_samp_per_chan.get()
+            samp_rate = clock.samp_clk_rate.get()
+            setpointlist = tuple(np.linspace(0, (N_samp-1)/samp_rate, N_samp))
+            
         spname = 'Time'
         spunit = 's'
 
@@ -39,7 +41,7 @@ class AIRead(MultiParameter):
         self.names = tuple(self._task._task.channel_names)
         self.units = ('V',)*N_chans
         self.labels = self.names
-        self.shapes = ((N_samp,),)*N_chans
+        self.shapes = ((len(setpointlist),),)*N_chans
 
     def get_raw(self):
         res = self._task._task.read(constants.READ_ALL_AVAILABLE)
@@ -64,6 +66,40 @@ class NIDAQ_StartTrigger(InstrumentChannel):
                            set_cmd=lambda x: setattr(trigger, "dig_edge_src", x),
                            get_cmd=lambda: getattr(trigger, "dig_edge_src"),
                            vals=vals.Strings()
+                           )
+        
+        self.add_parameter(name='retriggerable',
+                           label='start trigger retrigerable',
+                           set_cmd=lambda x: setattr(trigger, "retriggerable", x),
+                           get_cmd=lambda: getattr(trigger, "retriggerable"),
+                           vals=vals.Bool()
+                           )
+
+
+class NIDAQ_ImplicitClock(InstrumentChannel):
+    def __init__(self, parent: InstrumentChannel, name,
+                 sample_mode=AcquisitionType.FINITE,
+                 samps_per_chan=1000):
+        super().__init__(parent, name)
+
+        timing = self.parent._task.timing
+
+        timing.cfg_implicit_timing(sample_mode=sample_mode,
+                                   samps_per_chan=samps_per_chan)
+        
+        self.add_parameter(name='samp_quant_samp_mode',
+                           label='acquisition type',
+                           set_cmd=lambda x: setattr(timing, "samp_quant_samp_mode", x),
+                           get_cmd=lambda: getattr(timing, "samp_quant_samp_mode"),
+                           vals=vals.Enum(*AcquisitionType)
+                           )
+        
+        self.add_parameter(name='samp_quant_samp_per_chan',
+                           label='N samples',
+                           unit='',
+                           set_cmd=lambda x: setattr(timing, "samp_quant_samp_per_chan", x),
+                           get_cmd=lambda: getattr(timing, "samp_quant_samp_per_chan"),
+                           vals=vals.Ints(min_value=0)
                            )
 
 
@@ -116,7 +152,44 @@ class NIDAQ_SampleClock(InstrumentChannel):
                            )
 
 
-class NIDAQ_AIChannel(InstrumentChannel):
+class NIDAQ_COFreqChannel(InstrumentChannel):
+    def __init__(self, parent: InstrumentChannel, name, chanid,
+                 units=constants.FrequencyUnits.HZ,
+                 idle_state=constants.Level.LOW, freq=1):
+        super().__init__(parent, name)
+
+        chan = self.parent._task.co_channels.add_co_pulse_chan_freq(
+            chanid, name, units=units, idle_state=idle_state, freq=freq)
+             
+        self._chan = chan
+
+        self.add_parameter(name='co_count',
+                           label='co count',
+                           get_cmd=lambda: getattr(chan, "co_count")
+                           )
+
+        self.add_parameter(name='co_pulse_freq',
+                           label='co pulse frequency',
+                           unit='Hz',
+                           set_cmd=lambda x: setattr(chan, "co_pulse_freq", x),
+                           get_cmd=lambda: getattr(chan, "co_pulse_freq"),
+                           vals=vals.Numbers(0)
+                           )
+
+        self.add_parameter(name='co_pulse_idle_state',
+                           label='co idle state',
+                           set_cmd=lambda x: setattr(chan, "co_pulse_idle_state", x),
+                           get_cmd=lambda: getattr(chan, "co_pulse_idle_state"),
+                           vals=vals.Enum(*constants.Level)
+                           )
+
+        self.add_parameter(name='co_pulse_done',
+                           label='co pulse done',
+                           get_cmd=lambda: getattr(chan, "co_pulse_done")
+                           )
+
+
+class NIDAQ_AIVoltChannel(InstrumentChannel):
     def __init__(self, parent: InstrumentChannel, name, chanid,
                  terminal_config=TerminalConfiguration.RSE,
                  min_val=-10, max_val=10):
@@ -169,10 +242,17 @@ class NIDAQ_Task(InstrumentChannel):
                            parameter_class=AIRead,
                            )
 
-    def add_ai_channel(self, channame, chanid,
-                       terminal_config=TerminalConfiguration.RSE,
-                       min_val=-10, max_val=10):
-        chan = NIDAQ_AIChannel(self, channame, chanid, terminal_config, min_val, max_val)
+    def add_co_freq_channel(self, channame, chanid,
+                            units=constants.FrequencyUnits.HZ,
+                            idle_state=constants.Level.LOW,
+                            freq=1):
+        chan = NIDAQ_COFreqChannel(self, channame, chanid, units, idle_state, freq)
+        self.add_submodule(channame, chan)
+
+    def add_ai_volt_channel(self, channame, chanid,
+                            terminal_config=TerminalConfiguration.RSE,
+                            min_val=-10, max_val=10):
+        chan = NIDAQ_AIVoltChannel(self, channame, chanid, terminal_config, min_val, max_val)
         self.add_submodule(channame, chan)
 
     def add_sample_clock(self, rate, source="",
@@ -184,8 +264,11 @@ class NIDAQ_Task(InstrumentChannel):
                                   active_edge, sample_mode, samps_per_chan)
         self.add_submodule(clockname, clock)
 
-    def read(self):
-        self._task.read()
+    def add_implicit_clock(self, sample_mode=AcquisitionType.FINITE,
+                           samps_per_chan=1000):
+        clockname = "clock"
+        clock = NIDAQ_ImplicitClock(self, clockname, sample_mode, samps_per_chan)
+        self.add_submodule(clockname, clock)
 
     def start(self):
         self._task.start()
