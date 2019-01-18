@@ -30,6 +30,8 @@ class OutputChannel(InstrumentChannel):
         """
         super().__init__(parent, name)
 
+        self._channum = channum
+
         def val_parser(parser: type, inputstring: str) -> Union[float,int]:
             """
             Parses return values from instrument. Meant to be used when a query
@@ -65,6 +67,71 @@ class OutputChannel(InstrumentChannel):
                                           'DC')
                            )
 
+        max_freq = self._parent._max_freqs[self.model]
+
+        if self._parent.model in ['33511B','33512B','33522B','33622A']:
+            # FUNC ARB 
+            self.add_parameter('arb_waveform_fname',
+                            label='Channel {} arb waveform filename'.format(channum),
+                            set_cmd='SOURce{}:FUNC:ARB {{}}'.format(channum),
+                            get_cmd='SOURce{}:FUNC:ARB?'.format(channum),
+                            get_parser=str.rstrip,
+                            vals=vals.Strings()
+                            )
+
+            self.add_parameter('arb_waveform_adv',
+                            label='Channel {} arb waveform advance mode'.format(channum),
+                            set_cmd='SOURce{}:FUNCtion:ARBitrary:ADVance {{}}'.format(channum),
+                            get_cmd='SOURce{}:FUNCtion:ARBitrary:ADVance?'.format(channum),
+                            get_parser=str.rstrip,
+                            vals=vals.Enum('TRIG', 'SRAT')
+                            )
+
+            self.add_parameter('arb_waveform_filter',
+                            label='Channel {} arb waveform filter'.format(channum),
+                            set_cmd='SOURce{}:FUNCtion:ARBitrary:FILTer {{}}'.format(channum),
+                            get_cmd='SOURce{}:FUNCtion:ARBitrary:FILTer?'.format(channum),
+                            get_parser=str.rstrip,
+                            vals=vals.Enum('NORM', 'STEP', 'OFF')
+                            )
+
+            self.add_parameter('arb_waveform_frequency',
+                            label='Channel {} arb waveform frequency'.format(channum),
+                            set_cmd='SOURce{}:FUNCtion:ARBitrary:FREQuency {{}}'.format(channum),
+                            get_cmd='SOURce{}:FUNCtion:ARBitrary:FREQuency?'.format(channum),
+                            get_parser=float,
+                            unit='Hz',
+                            # TODO: max. freq. actually really tricky
+                            vals=vals.Numbers(1e-6, max_freq)
+                            )
+
+            self.add_parameter('arb_waveform_period',
+                            label='Channel {} arb waveform period'.format(channum),
+                            set_cmd='SOURce{}:FUNCtion:ARBitrary:PERiod {{}}'.format(channum),
+                            get_cmd='SOURce{}:FUNCtion:ARBitrary:PERiod?'.format(channum),
+                            get_parser=float,
+                            unit='s',
+                            vals=vals.Numbers(0)
+                            )
+
+            self.add_parameter('arb_waveform_points',
+                            label='Channel {} arb waveform number of points'.format(channum),
+                            get_cmd='SOURce{}:FUNCtion:ARBitrary:POINts?'.format(channum),
+                            get_parser=int
+                            )
+
+            max_rate = self._parent._max_rates[self.model]
+
+            self.add_parameter('arb_waveform_srate',
+                            label='Channel {} arb waveform sampling rate'.format(channum),
+                            set_cmd='SOURce{}:FUNCtion:ARBitrary:SRATe {{}}'.format(channum),
+                            get_cmd='SOURce{}:FUNCtion:ARBitrary:SRATe?'.format(channum),
+                            get_parser=float,
+                            unit='Sa/s',
+                            # TODO: max. rate. actually really tricky
+                            vals=vals.Numbers(1e-6, max_rate)
+                            )
+
         self.add_parameter('frequency_mode',
                            label='Channel {} frequency mode'.format(channum),
                            set_cmd='SOURce{}:FREQuency:MODE {{}}'.format(channum),
@@ -73,7 +140,6 @@ class OutputChannel(InstrumentChannel):
                            vals=vals.Enum('CW', 'LIST', 'SWEEP', 'FIXED')
                            )
 
-        max_freq = self._parent._max_freqs[self.model]
         self.add_parameter('frequency',
                            label='Channel {} frequency'.format(channum),
                            set_cmd='SOURce{}:FREQuency {{}}'.format(channum),
@@ -92,6 +158,7 @@ class OutputChannel(InstrumentChannel):
                            unit='deg',
                            vals=vals.Numbers(0, 360)
                            )
+
         self.add_parameter('amplitude_unit',
                            label='Channel {} amplitude unit'.format(channum),
                            set_cmd='SOURce{}:VOLTage:UNIT {{}}'.format(channum),
@@ -245,6 +312,21 @@ class OutputChannel(InstrumentChannel):
                                       'between the starts of consecutive '
                                       'bursts when trigger is immediate.')
                            )
+                           
+        # DATA SUBSYSTEM
+
+    def clear_waveform_mem(self):
+        self._parent.write(f'SOURce{self._channum}:DATA:VOL:CLEar')
+
+    def make_arbitrary_waveform(self, waveform_name, waveform_values):
+        """
+        waveform_values must be a list or a numpy array of integers
+        between -32767 and 32767
+        """
+        self._parent.visa_handle.write_binary_values(
+            f"SOUR{self._channum}:DATA:ARB:DAC {waveform_name!s},",
+            waveform_values,
+            datatype='h', is_big_endian=True)
 
 
 class SyncChannel(InstrumentChannel):
@@ -311,6 +393,13 @@ class WaveformGenerator_33XXX(KeysightErrorQueueMixin, VisaInstrument):
                            '33250A': 80e6,
                            '33522B': 30e6,
                            '33622A': 120e6}
+
+        self._max_rates = {'33210A': 0,
+                           '33511B': 250e6,
+                           '33512B': 250e6,
+                           '33250A': 0,
+                           '33522B': 250e6,
+                           '33622A': 1e9}
 
         self.num_channels = no_of_channels[self.model]
 
