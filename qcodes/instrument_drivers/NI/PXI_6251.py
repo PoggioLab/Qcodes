@@ -207,6 +207,13 @@ class NIDAQ_AIVoltChannel(InstrumentChannel):
                            vals=vals.Enum(*constants.TerminalConfiguration)
                            )
 
+        self.add_parameter(name='ai_coupling',
+                           label='ai coupling mode',
+                           set_cmd=lambda x: setattr(chan, "ai_coupling", x),
+                           get_cmd=lambda: getattr(chan, "ai_coupling"),
+                           vals=vals.Enum(*constants.Coupling)
+                           )
+
         self.add_parameter(name='ai_min',
                            label='ai min value',
                            unit='V',
@@ -228,6 +235,7 @@ class NIDAQ_Task(InstrumentChannel):
     def __init__(self, parent: Instrument, name):
         super().__init__(parent, name)
 
+        self._name = name
         self._task = task =  nidaqmx.Task(name)
 
         self.add_submodule("start_trigger",
@@ -277,7 +285,7 @@ class NIDAQ_Task(InstrumentChannel):
         self._task.stop()
 
     def close(self):
-        self._task.close()
+        self._parent.close_task(self._name)
 
 
 class PXI_6251(Instrument):
@@ -330,3 +338,7 @@ class PXI_6251(Instrument):
     def add_task(self, taskname):
         task = NIDAQ_Task(self, taskname)
         self.add_submodule(taskname, task)
+
+    def close_task(self, taskname):
+        self.submodules[taskname]._task.close()
+        del self.submodules[taskname]
