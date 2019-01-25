@@ -142,6 +142,9 @@ class DLCproLaser1(InstrumentChannel):
         super().__init__(parent, name, **kwargs)
 
         self.add_submodule('ctl', DLCproLaser1Ctl(self, 'ctl'))
+        self.add_submodule(
+            'power_stabilization',
+            DLCproLaser1PowerStab(self, 'power-stabilization'))
 
 
 class DLCproLaser1Ctl(InstrumentChannel):
@@ -165,6 +168,101 @@ class DLCproLaser1Ctl(InstrumentChannel):
                            val_type=int)
 
 
+class DLCproLaser1PowerStab(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_parameter(name='enabled',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=bool,
+                           label='power stabilization state')
+
+        self.add_submodule(
+            'gain',
+            DLCproLaser1PowerStabGain(self, 'gain'))
+
+        self.add_parameter(name='sign',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=bool,
+                           label='sign of the power stabilization action')
+                           
+        self.add_parameter(name='input_channel',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=int,
+                           label='power stabilization input channel')
+                           
+        self.add_parameter(name='setpoint',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='power stabilization target power',
+                           unit='mW')
+
+        self.add_parameter(name='input_channel_value_act',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=float,
+                           label='power stabilization actual power',
+                           unit='mW')
+
+        self.add_parameter(name='state',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=int,
+                           label="power stabilization state")
+
+        self.add_parameter(name='feedforward_enabled',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=bool,
+                           label='power stabilization feedforward state')
+                           
+        self.add_parameter(name='feedforward_factor',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='power stabilization feedforward factor',
+                           unit='V/mA')
+
+
+class DLCproLaser1PowerStabGain(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_parameter(name='all',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='overall gain')
+
+        self.add_parameter(name='p',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='proportional gain',
+                           unit='mA/mW')
+
+        self.add_parameter(name='i',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='integral gain',
+                           unit='mA/mW/ms')
+
+        self.add_parameter(name='d',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='differential gain',
+                           unit='mA.us/mW')
+
+
+class DLCproStandby(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_parameter(name='enabled',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=bool,
+                           label='standby target state')
+
+        self.add_parameter(name='state',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=int,
+                           label="standby state")
+
+
 class DLCpro(VisaInstrument):
     """
     QCodeS driver for TOPTICA DLCpro laser controller
@@ -186,6 +284,7 @@ class DLCpro(VisaInstrument):
         self.welcome_msg = self.read_raw()[2:]
 
         self.add_submodule('laser1', DLCproLaser1(self, 'laser1'))
+        self.add_submodule('standby', DLCproStandby(self, 'standby'))
 
         self.connect_message()
 
