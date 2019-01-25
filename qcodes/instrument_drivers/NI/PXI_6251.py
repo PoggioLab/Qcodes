@@ -104,8 +104,18 @@ class AIRead(MultiParameter):
         self.shapes = ((N_samps,),)*N_chans
 
     def get_raw(self):
-        res = self._task._task.read(constants.READ_ALL_AVAILABLE)
-        return tuple(np.array(res))
+        if self._task._first_read:
+            self._task._first_read = False            
+            res_raw = np.array(self._task._task.read(self.N_samps + self.N_trail))
+            if len(res_raw.shape) == 1:
+                res_raw = res_raw[np.newaxis,:]
+            res = tuple(res_raw[:,0: self.N_samps + self.N_trail - self.N_trail])
+        else:
+            res_raw = np.array(self._task._task.read(self.N_ticks))
+            if len(res_raw.shape) == 1:
+                res_raw = res_raw[np.newaxis,:]
+            res = tuple(res_raw[:,self.N_lead: self.N_ticks - self.N_trail])
+        return res
 
 
 class NIDAQ_StartTrigger(InstrumentChannel):
