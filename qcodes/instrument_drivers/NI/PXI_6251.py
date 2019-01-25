@@ -14,6 +14,53 @@ from functools import partial
 import numpy as np
 
 
+ADC_pipeline_samps = {
+    "PXI-6115": 2,
+    }
+
+DMA_len = {
+    "PXI-6115": 32,
+}
+
+sample_len = {
+    "PXI-6115": 2,
+}
+
+
+def params_retrig_AI_read(ai_task, N_samps):
+    ai_instr_id = ai_task._parent._device.product_type
+
+    N_chan = ai_task.number_of_channels.get()
+    N_samps_pipe = ADC_pipeline_samps[ai_instr_id]  # PXI-6115 ADCs each have a 2-point pipeline. 2 extra samples/channel are required to empty them
+    DMA_length = DMA_len[ai_instr_id] # PXI-6115 with extended memory option has 32 bytes FIFO
+    sample_length = sample_len[ai_instr_id] # PXI-6115 has 12-bit DACs so 1 sample fits in 2 bytes
+
+    DMA_samples = DMA_length/sample_length # PXI 6115 transfers data by chunks of 16 samples
+    if DMA_samples % N_chan == 0: # We put N_chan samples in the FIFO at each sampling clock tick, if N_chan divides FIFO_samples,
+        DMA_ticks = DMA_samples/N_chan # we need only DMA_samples/N_chan ticks to fill the FIFO
+    else:
+        DMA_ticks = DMA_samples # else we need DMA_samples ticks to fill N_chan times the FIFO
+        
+    N_samps_strand = DMA_ticks - N_samps_pipe % DMA_ticks
+    N_samps_trail = DMA_ticks - N_samps % DMA_ticks
+    N_ticks = N_samps + N_samps_trail + N_samps_strand + N_samps_pipe
+
+    assert N_ticks % 1 == 0
+    N_ticks = int(N_ticks)
+    assert N_samps_trail % 1 == 0
+    N_samps_trail = int(N_samps_trail)
+    assert N_samps_strand % 1 == 0
+    N_samps_strand = int(N_samps_strand)
+    N_samps_lead = N_samps_pipe + N_samps_strand
+
+    assert ((N_samps + N_samps_trail + N_samps_strand) * N_chan) % DMA_samples == ((N_ticks + N_samps_strand) * N_chan) % DMA_samples # Sanity check: same number of leftover samples in FIFO after first and subsequent triggers
+    # print(f"Acquire {N_ticks} samples/channel, "
+    #     f"on the first trigger read {N_samps + N_samps_trail} samples then discard the last {N_samps_trail}, "
+    #     f"on the next triggers read {N_ticks} samples then discard the first {N_samps_lead} and the last {N_samps_trail}.")
+
+    return N_ticks, (N_samps_lead, N_samps_trail)
+
+
 class AIRead(MultiParameter):
     def __init__(self, name, instrument, **kwargs):
         super().__init__(name, names=('',), shapes=((1,),), **kwargs)
