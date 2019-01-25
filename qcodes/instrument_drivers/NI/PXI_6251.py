@@ -306,7 +306,10 @@ class NIDAQ_Task(InstrumentChannel):
         super().__init__(parent, name)
 
         self._name = name
-        self._task = task =  nidaqmx.Task(name)
+        self._task = task = nidaqmx.Task(name)
+        
+        self.N_samps = None # clock.samp_quant_samp_per_chan.get()
+        self.sampling_rate_Hz = None # clock.samp_clk_rate.get()
 
         self.add_submodule("start_trigger",
                            NIDAQ_StartTrigger(self, "start_trigger"))
@@ -326,6 +329,7 @@ class NIDAQ_Task(InstrumentChannel):
                             freq=1):
         chan = NIDAQ_COFreqChannel(self, channame, chanid, units, idle_state, freq)
         self.add_submodule(channame, chan)
+        self.sampling_rate_Hz = freq
 
     def add_ai_volt_channel(self, channame, chanid,
                             terminal_config=TerminalConfiguration.RSE,
@@ -341,15 +345,19 @@ class NIDAQ_Task(InstrumentChannel):
         clock = NIDAQ_SampleClock(self, clockname, rate, source,
                                   active_edge, sample_mode, samps_per_chan)
         self.add_submodule(clockname, clock)
+        self.N_samps = samps_per_chan
+        self.sampling_rate_Hz = rate
 
     def add_implicit_clock(self, sample_mode=AcquisitionType.FINITE,
                            samps_per_chan=1000):
         clockname = "clock"
         clock = NIDAQ_ImplicitClock(self, clockname, sample_mode, samps_per_chan)
         self.add_submodule(clockname, clock)
+        self.N_samps = samps_per_chan
 
     def start(self):
         self._task.start()
+        self._first_read = True
 
     def stop(self):
         self._task.stop()
