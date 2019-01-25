@@ -67,17 +67,30 @@ class AIRead(MultiParameter):
 
         self._task = instrument
 
-    def prepare_AIRead(self, setpointlist=None):
-        clock = self._task.clock
+    def prepare_AIRead(self, external_clock_dict = None, setpointlist=None):        
+        self._ext_clock_dict = external_clock_dict
 
         N_chans = self._task.number_of_channels.get()
 
-        if setpointlist is None:
-            # setpoints
-            N_samp = clock.samp_quant_samp_per_chan.get()
-            samp_rate = clock.samp_clk_rate.get()
-            setpointlist = tuple(np.linspace(0, (N_samp-1)/samp_rate, N_samp))
+        if self._ext_clock_dict is not None:
+            N_samps = self._ext_clock_dict['N_samps']
+            sampling_rate_Hz = self._ext_clock_dict['sampling_rate_Hz']   
+            N_ticks, (N_lead, N_trail) = params_retrig_AI_read(self._task, N_samps)
+        else:
+            N_samps = self._task.N_samps
+            sampling_rate_Hz = self._task.sampling_rate_Hz
+            N_ticks, (N_lead, N_trail) = N_samps, (0, 0)
             
+        if setpointlist is None:
+            setpointlist = tuple(np.arange(N_samps)/sampling_rate_Hz)
+        else:
+            assert len(setpointlist) == N_samps
+            
+        self.N_ticks = N_ticks
+        self.N_lead = N_lead
+        self.N_trail = N_trail
+        self.N_samps = N_samps
+
         spname = 'Time'
         spunit = 's'
 
@@ -88,7 +101,7 @@ class AIRead(MultiParameter):
         self.names = tuple(self._task._task.channel_names)
         self.units = ('V',)*N_chans
         self.labels = self.names
-        self.shapes = ((len(setpointlist),),)*N_chans
+        self.shapes = ((N_samps,),)*N_chans
 
     def get_raw(self):
         res = self._task._task.read(constants.READ_ALL_AVAILABLE)
