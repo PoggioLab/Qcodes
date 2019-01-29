@@ -142,9 +142,11 @@ class DLCproLaser1(InstrumentChannel):
         super().__init__(parent, name, **kwargs)
 
         self.add_submodule('ctl', DLCproLaser1Ctl(self, 'ctl'))
-        self.add_submodule(
-            'power_stabilization',
-            DLCproLaser1PowerStab(self, 'power-stabilization'))
+        self.add_submodule('power_stabilization',
+                           DLCproLaser1PowerStab(self,
+                                                 'power-stabilization'))
+        self.add_submodule('pd_ext',
+                           DLCproLaser1PDExt(self, 'pd-ext'))
 
 
 class DLCproLaser1Ctl(InstrumentChannel):
@@ -166,6 +168,40 @@ class DLCproLaser1Ctl(InstrumentChannel):
         self.add_parameter(name='state',
                            parameter_class=DLCproReadOnlyParam,
                            val_type=int)
+
+
+class DLCproLaser1PDExt(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_parameter(name='input_channel',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=int,
+                           label='PDext input channel')
+
+        self.add_parameter(name='photodiode',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=float,
+                           label='PDext measured voltage',
+                           unit='V')
+
+        self.add_parameter(name='power',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=float,
+                           label='PDext measured power',
+                           unit='mW')
+
+        self.add_parameter(name='cal_offset',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='PDext calibration offset',
+                           unit='V')
+
+        self.add_parameter(name='cal_factor',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='PDext calibration factor',
+                           unit='mW/V')
 
 
 class DLCproLaser1PowerStab(InstrumentChannel):
