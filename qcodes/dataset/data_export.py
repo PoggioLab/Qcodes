@@ -3,8 +3,8 @@ import logging
 
 import numpy as np
 
-from qcodes.dataset.sqlite_base import (get_dependencies, get_dependents,
-                                        get_layout)
+from qcodes.dataset.sqlite.queries import (get_dependencies, get_dependents,
+                                           get_layout)
 from qcodes.dataset.data_set import load_by_id
 
 log = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ def flatten_1D_data_for_plot(rawdata: Sequence[Sequence[Any]]) -> np.ndarray:
 
     Returns:
         A one-dimensional numpy array
+
     """
     dataarray = np.array(rawdata)
     shape = np.shape(dataarray)
@@ -38,6 +39,8 @@ def get_data_by_id(run_id: int) -> List:
 
     Returns:
         a list of lists of dictionaries like this:
+
+    ::
 
         [
           # each element in this list refers
@@ -59,6 +62,7 @@ def get_data_by_id(run_id: int) -> List:
             ],
             ...
         ]
+
     """
 
     data = load_by_id(run_id)
