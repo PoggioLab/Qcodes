@@ -1,7 +1,6 @@
 import logging
 
-from ctypes import cdll, byref, c_int, create_string_buffer, sizeof
-LUCI = cdll.LoadLibrary('LUCI_10_x64.dll')
+from ctypes import CDLL, byref, c_int, create_string_buffer, sizeof
 
 from qcodes.instrument.parameter import Parameter
 from qcodes.instrument.base import Instrument
@@ -25,15 +24,15 @@ class OE300Error(Exception):
 
 class OE300BaseParam(Parameter):
     def __init__(self, name, instrument, vals, nbits, **kwargs):
-        super().__init__(name, instrument, vals, **kwargs)
+        super().__init__(name=name, instrument=instrument, vals=vals, **kwargs)
         self._raw_value = 0
         self._nbits = nbits
 
-    def get_raw(self):
-        return self.raw_value_to_value(self.raw_value)
+    def get_raw(self): # pylint: disable=method-hidden
+        return self.raw_value_to_value(self._raw_value)
 
-    def set_raw(self, value):
-        old_raw_value = self.raw_value
+    def set_raw(self, value): # pylint: disable=method-hidden
+        old_raw_value = self._raw_value
 
         self._raw_value = self.value_to_raw_value(value)
         try:
@@ -52,8 +51,8 @@ class OE300BaseParam(Parameter):
         return f'{self._raw_value:0{self._nbits}b}'
 
 
-class OE300GainFactor(OE300BaseParam):    
-    def set_raw(self, value):        
+class OE300GainMode(OE300BaseParam):    
+    def set_raw(self, value): # pylint: disable=method-hidden     
         old_gain_vals = self._instrument.gain.vals
         gains = LOW_NOISE_GAINS if value == 'L' else HIGH_SPEED_GAINS
         self._instrument.gain.vals = Enum(*gains)
@@ -68,15 +67,20 @@ class OE300(Instrument):
     """
     A driver for the FEMTO OE300 photodiode, controlled through the LUCI-10 interface. The LUCI-10 dll needs to be installed.
     """
-    
-    def __init__(self, name, index=None, idn=None, **kwargs):
+    dll_path = 'C:\\Program Files (x86)\\FEMTO\\LUCI-10\\Driver\\LUCI_10_x64.dll'
+
+    def __init__(self, name, index=None, idn=None, dll_path=None, **kwargs):
         super().__init__(name, **kwargs)
 
+        log.info('Loading LUCI-10 dll')
+        self.LUCI = CDLL(dll_path or self.dll_path)
+
+        log.info('Connecting to OE300 device')
         # connect to desired device
         idn_tmp = c_int()
         dev_idn_list = []
-        for index in range(1, LUCI.EnumerateUsbDevices() + 1): #index starts at 1.
-            LUCI.ReadAdapterID(index, byref(idn_tmp))
+        for index in range(1, self.LUCI.EnumerateUsbDevices() + 1): #index starts at 1.
+            self.LUCI.ReadAdapterID(index, byref(idn_tmp))
             dev_idn_list.append(idn_tmp)
 
         if index is None and idn is None:
@@ -91,41 +95,48 @@ class OE300(Instrument):
             else:
                 raise ValueError("index and idn do not match, it is best to only specify one")
 
+        log.info('Reseting OE300 device')
         # reset device
-        LUCI.WriteData(self._index, 0, 0)
+        self.LUCI.WriteData(self._index, 0, 0)
 
         self.add_parameter('gain',
                            label='Gain',
                            vals=Enum(*LOW_NOISE_GAINS),
-                           nbits=3)
+                           nbits=3,
+                           parameter_class=OE300BaseParam)
 
         self.add_parameter('coupling',
                            label='Coupling',
                            vals=Enum(*COUPLING_MODES),
-                           nbits=1)
+                           nbits=1,
+                           parameter_class=OE300BaseParam)
 
         self.add_parameter('gain_mode',
                            label='Gain mode',
                            vals=Enum(*GAIN_SETTINGS),
-                           nbits=1)
+                           nbits=1,
+                           parameter_class=OE300GainMode)
 
         self.add_parameter('lp_filter_bw',
                            label='Lowpass filter bandwidth',
                            vals=Enum(*LP_SETTINGS),
-                           nbits=2)
+                           nbits=2,
+                           parameter_class=OE300BaseParam)
+
+        log.info('OE300 initialization complete')
 
     def write_data(self):        
         low_byte = int(self.lp_filter_bw.make_bits() +
                        self.gain_mode.make_bits() +
                        self.coupling.make_bits() +
                        self.gain.make_bits(), 2)
-        error_code = LUCI.WriteData(self._index, low_byte, 0)
+        error_code = self.LUCI.WriteData(self._index, low_byte, 0)
         if error_code:
             raise OE300Error(error_code)
 
     def get_idn(self):
         p = create_string_buffer(50)
-        LUCI.GetProductString(self._index, p, sizeof(p))
+        self.LUCI.GetProductString(self._index, p, sizeof(p))
 
         vendor = 'FEMTO'
         model = p.value.decode()
