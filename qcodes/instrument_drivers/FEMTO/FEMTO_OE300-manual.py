@@ -35,11 +35,6 @@ class OE300BaseParam(Parameter):
         old_raw_value = self._raw_value
 
         self._raw_value = self.value_to_raw_value(value)
-        try:
-            self._instrument.write_data()
-        except OE300Error as e:
-            self._raw_value = old_raw_value
-            raise e
             
     def value_to_raw_value(self, value):
         return self.vals._valid_values.index(value)
@@ -52,52 +47,19 @@ class OE300BaseParam(Parameter):
 
 
 class OE300GainMode(OE300BaseParam):    
-    def set_raw(self, value): # pylint: disable=method-hidden     
-        old_gain_vals = self._instrument.gain.vals
+    def set_raw(self, value): # pylint: disable=method-hidden 
         gains = LOW_NOISE_GAINS if value == 'L' else HIGH_SPEED_GAINS
         self._instrument.gain.vals = Enum(*gains)
-        try:
-            super().set_raw(value)
-        except OE300Error as e:
-            self._instrument.gain.vals = old_gain_vals
-            raise e
+        super().set_raw(value)
 
 
-class OE300(Instrument):
+class OE300Manual(Instrument):
     """
-    A driver for the FEMTO OE300 photodiode, controlled through the LUCI-10 interface. The LUCI-10 dll needs to be installed.
+    A driver for the FEMTO OE300 photodiode, controlled manually.
     """
-    dll_path = 'C:\\Program Files (x86)\\FEMTO\\LUCI-10\\Driver\\LUCI_10_x64.dll'
 
-    def __init__(self, name, index=None, idn=None, dll_path=None, **kwargs):
+    def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
-
-        log.info('Loading LUCI-10 dll')
-        self.LUCI = CDLL(dll_path or self.dll_path)
-
-        log.info('Connecting to OE300 device')
-        # connect to desired device
-        idn_tmp = c_int()
-        dev_idn_list = []
-        for index in range(1, self.LUCI.EnumerateUsbDevices() + 1): #index starts at 1.
-            self.LUCI.ReadAdapterID(index, byref(idn_tmp))
-            dev_idn_list.append(idn_tmp)
-
-        if index is None and idn is None:
-            self._index=1
-        elif index is None and idn is not None:
-            self._index = dev_idn_list.index(idn) + 1 # index starts at 1.
-        elif index is not None and idn is None:
-            self._index = index
-        else:
-            if index == dev_idn_list.index(idn) + 1: # index starts at 1.
-                self._index = index
-            else:
-                raise ValueError("index and idn do not match, it is best to only specify one")
-
-        log.info('Reseting OE300 device')
-        # reset device
-        self.LUCI.WriteData(self._index, 0, 0)
 
         self.add_parameter('gain',
                            label='Gain',
@@ -123,23 +85,12 @@ class OE300(Instrument):
                            nbits=2,
                            parameter_class=OE300BaseParam)
 
-        log.info('OE300 initialization complete')
-
-    def write_data(self):        
-        low_byte = int(self.lp_filter_bw.make_bits() +
-                       self.gain_mode.make_bits() +
-                       self.coupling.make_bits() +
-                       self.gain.make_bits(), 2)
-        error_code = self.LUCI.WriteData(self._index, low_byte, 0)
-        if error_code:
-            raise OE300Error(error_code)
+        log.info('Manually controlled  OE300 initialization complete')
 
     def get_idn(self):
-        p = create_string_buffer(50)
-        self.LUCI.GetProductString(self._index, p, sizeof(p))
 
         vendor = 'FEMTO'
-        model = p.value.decode()
+        model = None
         serial = None
         firmware = None
         return {'vendor': vendor, 'model': model,
