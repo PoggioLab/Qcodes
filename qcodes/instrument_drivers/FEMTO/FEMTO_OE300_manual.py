@@ -2,7 +2,9 @@ import logging
 
 from ctypes import CDLL, byref, c_int, create_string_buffer, sizeof
 
-from qcodes.instrument.parameter import Parameter
+import numpy as np
+
+from qcodes.instrument.parameter import Parameter, ManualParameter
 from qcodes.instrument.base import Instrument
 from qcodes.utils.validators import Enum
 
@@ -32,8 +34,6 @@ class OE300BaseParam(Parameter):
         return self.raw_value_to_value(self._raw_value)
 
     def set_raw(self, value): # pylint: disable=method-hidden
-        old_raw_value = self._raw_value
-
         self._raw_value = self.value_to_raw_value(value)
             
     def value_to_raw_value(self, value):
@@ -58,7 +58,7 @@ class OE300Manual(Instrument):
     A driver for the FEMTO OE300 photodiode, controlled manually.
     """
 
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, cal_path=None, prefactor=1, **kwargs):
         super().__init__(name, **kwargs)
 
         self.add_parameter('gain',
@@ -85,7 +85,24 @@ class OE300Manual(Instrument):
                            nbits=2,
                            parameter_class=OE300BaseParam)
 
+        self.add_parameter('prefactor',
+                           label='Prefactor',
+                           parameter_class=ManualParameter,
+                           units=None,
+                           initial_value=prefactor)
+
         log.info('Manually controlled  OE300 initialization complete')
+
+        if cal_path:
+            self.load_cal_file(cal_path)
+        else:
+            self.cal = None
+
+    def load_cal_file(self, path):
+        raw_cal = np.genfromtxt(path,
+                          delimiter=',', 
+                          skip_header=1).T
+        self.cal = {'wl_nm': raw_cal[0], 'A_W': raw_cal[1]}
 
     def get_idn(self):
 
