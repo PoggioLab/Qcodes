@@ -2,26 +2,14 @@ import logging
 
 from ctypes import CDLL, byref, c_int, create_string_buffer, sizeof
 
-import numpy as np
-
 from qcodes.instrument.parameter import Parameter, ManualParameter
-from qcodes.instrument.base import Instrument
 from qcodes.utils.validators import Enum
 
+from .FEMTO_OE300_base import (OE300State, OE300Error, LOW_NOISE_GAINS, HIGH_SPEED_GAINS,
+                               LP_SETTINGS, COUPLING_MODES, GAIN_SETTINGS, ERROR_TABLE,
+                               OE300Base)
+
 log = logging.getLogger(__name__)
-
-LOW_NOISE_GAINS = (1e2, 1e3, 1e4, 1e5, 1e6, 1e7)
-HIGH_SPEED_GAINS = (1e3, 1e4, 1e5, 1e6, 1e7, 1e8)
-LP_SETTINGS = ('FBW', '10MHz', '1MHz') # ordered by corresponding binary coding 
-COUPLING_MODES = ('DC', 'AC')
-GAIN_SETTINGS = ('L', 'H')
-
-ERROR_TABLE = {-1: "Invalid index: selected LUCI-10 not in list",
-               -2: "Instrument error: LUCI-10 does not respond"}
-
-class OE300Error(Exception):
-    def __init__(self, error_code):
-        super().__init__(ERROR_TABLE[error_code])
 
 
 class OE300BaseParam(Parameter):
@@ -65,7 +53,7 @@ class OE300GainMode(OE300BaseParam):
             raise e
 
 
-class OE300LUCI(Instrument):
+class OE300LUCI(OE300Base):
     """
     A driver for the FEMTO OE300 photodiode, controlled through the LUCI-10 interface. The LUCI-10 dll needs to be installed.
     """
@@ -132,17 +120,6 @@ class OE300LUCI(Instrument):
                            initial_value=prefactor)
 
         log.info('LUCI-controlled OE300 initialization complete')
-
-        if cal_path:
-            self.load_cal_file(cal_path)
-        else:
-            self.cal = None
-
-    def load_cal_file(self, path):
-        raw_cal = np.genfromtxt(path,
-                          delimiter=',', 
-                          skip_header=1).T
-        self.cal = {'wl_nm': raw_cal[0], 'A_W': raw_cal[1]}
 
     def write_data(self):        
         low_byte = int(self.lp_filter_bw.make_bits() +
