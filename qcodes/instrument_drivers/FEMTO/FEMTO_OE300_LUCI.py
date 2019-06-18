@@ -60,7 +60,7 @@ class OE300LUCI(OE300Base):
     dll_path = 'C:\\Program Files (x86)\\FEMTO\\LUCI-10\\Driver\\LUCI_10_x64.dll'
 
     def __init__(self, name, index=None, idn=None, dll_path=None, cal_path=None, prefactor=1, **kwargs):
-        super().__init__(name, **kwargs)
+        super().__init__(name, cal_path, prefactor, **kwargs)
 
         log.info('Loading LUCI-10 dll')
         self.LUCI = CDLL(dll_path or self.dll_path)
@@ -112,12 +112,6 @@ class OE300LUCI(OE300Base):
                            vals=Enum(*LP_SETTINGS),
                            nbits=2,
                            parameter_class=OE300BaseParam)
-
-        self.add_parameter('prefactor',
-                           label='Prefactor',
-                           parameter_class=ManualParameter,
-                           units=None,
-                           initial_value=prefactor)
 
         log.info('LUCI-controlled OE300 initialization complete')
 

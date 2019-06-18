@@ -45,7 +45,7 @@ class OE300Manual(OE300Base):
     """
 
     def __init__(self, name, cal_path=None, prefactor=1, **kwargs):
-        super().__init__(name, **kwargs)
+        super().__init__(name, cal_path, prefactor, **kwargs)
 
         self.add_parameter('gain',
                            label='Gain',
@@ -70,12 +70,6 @@ class OE300Manual(OE300Base):
                            vals=Enum(*LP_SETTINGS),
                            nbits=2,
                            parameter_class=OE300BaseParam)
-
-        self.add_parameter('prefactor',
-                           label='Prefactor',
-                           parameter_class=ManualParameter,
-                           units=None,
-                           initial_value=prefactor)
 
         log.info('Manually controlled  OE300 initialization complete')
 
