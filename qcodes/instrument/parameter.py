@@ -27,7 +27,7 @@ more specialized ones:
 - :class:`.ParameterWithSetpoints` is intended for array-values parameters.
     This Parameter class is intended for anything where a call to the instrument
     returns an array of values.
-    `This notebook <../examples/writing_drivers/Simple-Example-of-ParameterWithSetpoints.ipynb>`_.
+    `This notebook <../examples/Parameters/Simple-Example-of-ParameterWithSetpoints.ipynb>`__.
     gives more detailed examples of how this parameter can be used.
     :class:`.ParameterWithSetpoints` is supported in a
     :class:`qcodes.dataset.measurements.Measurement` but is not supported by the
@@ -38,7 +38,7 @@ more specialized ones:
     each value of which is an array.
     This Parameter class is intended for anything where a call to the instrument
     returns a sequence of arrays of values.
-    `This notebook <../examples/writing_drivers/Simple-Example-of-MultiParameterWithSetpoints.ipynb>`_.
+    `This notebook <../examples/Parameters/Simple-Example-of-MultiParameterWithSetpoints.ipynb>`__.
     gives more detailed examples of how this parameter can be used.
     :class:`.MultiParameterWithSetpoints` is supported in a
     :class:`qcodes.dataset.measurements.Measurement` but is not supported by the
@@ -1189,7 +1189,7 @@ class MultiParameterWithSetpoints(Parameter):
         self.labels = labels if labels is not None else names
         self.units = units if units is not None else [''] * len(names)
 
-        if not isinstance(vals, VSequence): 
+        if not isinstance(vals, VSequence):
             raise ValueError(f"A ParameterWithSetpoints must have a Sequence "
                              f"validator with an Arrays element validator "
                              f"got {type(vals)}")
@@ -1235,7 +1235,7 @@ class MultiParameterWithSetpoints(Parameter):
 
     def validate_consistent_shape(self) -> None:
         """
-        Verifies that the number of values is consistent with the names, and 
+        Verifies that the number of values is consistent with the names, and
         that the shape of the Array Validator of the parameter is consistent
         with the Validator of the Setpoints. This requires that both the
         setpoints and the actual parameters have validators of type Sequence
@@ -2250,14 +2250,17 @@ class ScaledParameter(Parameter):
 
 def expand_setpoints_helper(parameter: Union[ParameterWithSetpoints,
                                              MultiParameterWithSetpoints]
-                            ) -> List[Tuple[_BaseParameter, numpy.ndarray]]:
+                            ) -> List[Tuple[Union[_BaseParameter, str],
+                                            numpy.ndarray]]:
     """
-    A helper function that takes a :class:`.ParameterWithSetpoints` and
-    acquires the parameter along with it's setpoints. The data is returned
-    in a format prepared to insert into the dataset.
+    A helper function that takes a :class:`.ParameterWithSetpoints` or a
+    :class:`.MultiParameterWithSetpoints` and acquires the parameter along
+    with it's setpoints. The data is returned in a format prepared to insert
+    into the dataset.
 
     Args:
-        parameter: A ParameterWithSetpoints to be acquired and expanded
+        parameter: A ParameterWithSetpoints or MultiParameterWithSetpoints
+        to be acquired and expanded
 
     Returns:
         A list of tuples of parameters and values for the specified parameter
@@ -2268,7 +2271,7 @@ def expand_setpoints_helper(parameter: Union[ParameterWithSetpoints,
         raise TypeError(
             f"Expanding setpoints only works for ParameterWithSetpoints or "
             f"MultiParameterWithSetpoints. Supplied a {type(parameter)}")
-    res = []
+    res: List[Tuple[Union[_BaseParameter, str], Any]] = []
     setpoint_params = []
     setpoint_data = []
     for setpointparam in parameter.setpoints:
