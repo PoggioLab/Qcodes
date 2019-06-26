@@ -142,11 +142,40 @@ class DLCproLaser1(InstrumentChannel):
         super().__init__(parent, name, **kwargs)
 
         self.add_submodule('ctl', DLCproLaser1Ctl(self, 'ctl'))
+        self.add_submodule('dl', DLCproLaser1Dl(self, 'dl'))
         self.add_submodule('power_stabilization',
                            DLCproLaser1PowerStab(self,
                                                  'power-stabilization'))
         self.add_submodule('pd_ext',
                            DLCproLaser1PDExt(self, 'pd-ext'))
+
+
+class DLCproLaser1Dl(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_submodule('cc', DLCproLaser1DlCc(self, 'cc'))
+
+
+class DLCproLaser1DlCc(InstrumentChannel):
+    def __init__(self, parent: Instrument, name: str, **kwargs) -> None:
+        super().__init__(parent, name, **kwargs)
+
+        self.add_parameter(name='current_act',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=float,
+                           label='laser diode current',
+                           unit='mA')
+
+        self.add_parameter(name='current_set',
+                           parameter_class=DLCproReadWriteParam,
+                           val_type=float,
+                           label='target laser diode current',
+                           unit='mA')
+
+        self.add_parameter(name='state',
+                           parameter_class=DLCproReadOnlyParam,
+                           val_type=int)
 
 
 class DLCproLaser1Ctl(InstrumentChannel):
