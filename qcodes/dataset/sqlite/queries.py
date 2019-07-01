@@ -136,6 +136,7 @@ def get_parameter_data(conn: ConnectionPlus,
                        columns: Sequence[str] = (),
                        start: Optional[int] = None,
                        end: Optional[int] = None,
+                       where_statement: Optional[str] = None,
                        include_setpoints = True) -> \
         Dict[str, Dict[str, np.ndarray]]:
     """
@@ -193,7 +194,8 @@ def get_parameter_data(conn: ConnectionPlus,
                                         output_param,
                                         *param_names[1:],
                                         start=start,
-                                        end=end)
+                                        end=end,
+                                        where_statement=where_statement)
 
         # if we have array type parameters expand all other parameters
         # to arrays
@@ -265,7 +267,8 @@ def get_parameter_tree_values(conn: ConnectionPlus,
                               toplevel_param_name: str,
                               *other_param_names,
                               start: Optional[int] = None,
-                              end: Optional[int] = None) -> List[List[Any]]:
+                              end: Optional[int] = None,
+                              where_statement: Optional[str] = None) -> List[List[Any]]:
     """
     Get the values of one or more columns from a data table. The rows
     retrieved are the rows where the 'toplevel_param_name' column has
@@ -316,6 +319,9 @@ def get_parameter_tree_values(conn: ConnectionPlus,
           FROM {sql_subquery}
           LIMIT {limit} OFFSET {offset}
           """
+
+    if where_statement is not None:
+        sql += f"WHERE {where_statement}"
 
     cursor = conn.cursor()
     cursor.execute(sql, ())

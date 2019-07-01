@@ -762,6 +762,7 @@ class DataSet(Sized):
             *params: Union[str, ParamSpec, _BaseParameter],
             start: Optional[int] = None,
             end: Optional[int] = None,
+            where_statement: Optional[str] = None,
             include_setpoints = True) -> Dict[str, Dict[str, numpy.ndarray]]:
         """
         Returns the values stored in the DataSet for the specified parameters
@@ -804,14 +805,19 @@ class DataSet(Sized):
         else:
             valid_param_names = self._validate_parameters(*params)
         return get_parameter_data(self.conn, self.table_name,
-                                  valid_param_names, start, end, include_setpoints)
+                                  valid_param_names,
+                                  start=start,
+                                  end=end,
+                                  where_statement=where_statement, 
+                                  include_setpoints=include_setpoints)
 
     def get_data_as_pandas_dataframe(self,
                                      *params: Union[str,
                                                     ParamSpec,
                                                     _BaseParameter],
                                      start: Optional[int] = None,
-                                     end: Optional[int] = None) -> \
+                                     end: Optional[int] = None,
+                                     where_statement: Optional[str] = None) -> \
             Dict[str, pd.DataFrame]:
         """
         Returns the values stored in the DataSet for the specified parameters
@@ -852,7 +858,8 @@ class DataSet(Sized):
         dfs = {}
         datadict = self.get_parameter_data(*params,
                                            start=start,
-                                           end=end)
+                                           end=end,
+                                           where_statement=where_statement)
         for name, subdict in datadict.items():
             keys = list(subdict.keys())
             if len(keys) == 0:
