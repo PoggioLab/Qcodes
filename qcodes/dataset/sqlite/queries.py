@@ -309,15 +309,19 @@ def get_parameter_tree_values(conn: ConnectionPlus,
     columns = [toplevel_param_name] + list(other_param_names)
     columns_for_select = ','.join(columns)
 
-    sql_subquery = f"""
+    sql_subsubquery = f"""
                    (SELECT {columns_for_select}
                     FROM "{result_table_name}"
                     WHERE {toplevel_param_name} IS NOT NULL)
                    """
+    sql_subquery = f"""
+          (SELECT {columns_for_select}
+          FROM {sql_subsubquery}
+          LIMIT {limit} OFFSET {offset})
+          """
     sql = f"""
           SELECT {columns_for_select}
           FROM {sql_subquery}
-          LIMIT {limit} OFFSET {offset}
           """
 
     if where_statement is not None:
