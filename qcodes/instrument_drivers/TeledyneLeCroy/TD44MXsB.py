@@ -413,6 +413,9 @@ class TD44MXsB(VisaInstrument):
                            vals=vals.Enum('neg', 'pos'),
                            get_parser=ans_parser
                            )
+
+        self.add_function(name="force_trigger",
+                          call_cmd="FORCE_TRIGGER")
         
         for ch in range(1, 5):
             ch_name = 'C{}'.format(ch)
