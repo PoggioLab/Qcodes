@@ -7,8 +7,8 @@ from numpy import ndarray
 import logging
 
 import qcodes
-from qcodes.dataset.param_spec import ParamSpecBase
-from qcodes.dataset.dependencies import InterDependencies_
+from qcodes.dataset.descriptions.param_spec import ParamSpecBase
+from qcodes.dataset.descriptions.dependencies import InterDependencies_
 # pylint: disable=unused-import
 from qcodes.dataset.sqlite.connection import atomic_transaction
 from qcodes.tests.dataset.temporary_databases import (
@@ -174,7 +174,7 @@ def test_subscription_from_config(dataset, basic_subscriber):
             expected_state[x+1] = [(x, y)]
 
             @retry_until_does_not_throw(
-                exception_class_to_expect=AssertionError, delay=0, tries=10)
+                exception_class_to_expect=AssertionError, tries=10)
             def assert_expected_state():
                 assert dataset.subscribers[sub_id].state == expected_state
                 assert dataset.subscribers[sub_id_c].state == expected_state
