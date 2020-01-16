@@ -877,7 +877,7 @@ class DataSet(Sized):
                                      start: Optional[int] = None,
                                      end: Optional[int] = None,
                                      where_statement: Optional[str] = None) -> \
-            Dict[str, pd.DataFrame]:
+            Dict[str, "pd.DataFrame"]:
         """
         Returns the values stored in the :class:`.DataSet` for the specified parameters
         and their dependencies as a dict of :py:class:`pandas.DataFrame` s
