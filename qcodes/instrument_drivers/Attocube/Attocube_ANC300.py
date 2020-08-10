@@ -229,12 +229,12 @@ class ANMxx0(InstrumentChannel):
                             call_cmd='stop {}'.format(self.aid))
 
             def wait_steps_end(self):
-                old_timeout = self.root_instrument.visa_handle.timeout
+                old_timeout = self.root_instrument.timeout()
                 try:
-                    self.root_instrument.visa_handle.timeout = 3600
+                    self.root_instrument.timeout.set(3600)
                     self.write_raw(f'stepw {self.aid}')
                 finally:
-                    self.root_instrument.visa_handle.timeout = old_timeout
+                    self.root_instrument.timeout.set(old_timeout)
 
             self.wait_steps_end = types.MethodType(wait_steps_end, self) # be sure to import types
 
