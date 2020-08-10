@@ -1,14 +1,16 @@
 try:
     import nidaqmx
     from nidaqmx import constants
-    from nidaqmx.constants import Edge, AcquisitionType, TerminalConfiguration
+    from nidaqmx.constants import Edge, AcquisitionType, TerminalConfiguration, AcquisitionType, RegenerationMode
 except ImportError:
     raise ImportError('Could not find nidaqmx module.')
 
 from qcodes.instrument.base import Instrument
 from qcodes.instrument.channel import InstrumentChannel
-from qcodes import ArrayParameter, MultiParameter
+from qcodes import ArrayParameter, MultiParameter, ManualParameter
 from qcodes.utils import validators as vals
+
+from typing import Tuple
 
 from functools import partial
 import numpy as np
@@ -25,6 +27,17 @@ DMA_len = {
 sample_len = {
     "PXI-6115": 2,
 }
+
+
+def dist(b, a):
+    return np.sqrt((b[1]-a[1])**2+(b[0]-a[0])**2)
+
+
+def trajectory(b, a, vel, dt):
+    N = np.ceil(dist(b,a)/vel/dt)
+    if N < 2:
+        N=2
+    return np.require(np.linspace(a, b, N).T, requirements=["C_CONTIGUOUS", "WRITEABLE"])
 
 
 def params_retrig_AI_read(ai_task, N_samps):
@@ -301,6 +314,77 @@ class NIDAQ_AIVoltChannel(InstrumentChannel):
                            )
 
 
+class NIDAQ_AOVoltChannel(InstrumentChannel):
+    def __init__(self, parent: InstrumentChannel, name, chanid,
+                 min_val=-10, max_val=10):
+        super().__init__(parent, name)
+
+        chan = self.parent._task.ao_channels.add_ao_voltage_chan(
+            chanid, name, min_val=min_val, max_val=max_val)
+             
+        self._chan = chan
+
+        self.add_parameter(name='ao_term_cfg',
+                           label='ao terminal configuration',
+                           set_cmd=lambda x: setattr(chan, "ao_term_cfg", x),
+                           get_cmd=lambda: getattr(chan, "ao_term_cfg"),
+                           vals=vals.Enum(*constants.TerminalConfiguration)
+                           )
+
+        self.add_parameter(name='ai_coupling',
+                           label='ai coupling mode',
+                           set_cmd=lambda x: setattr(chan, "ai_coupling", x),
+                           get_cmd=lambda: getattr(chan, "ai_coupling"),
+                           vals=vals.Enum(*constants.Coupling)
+                           )
+
+        self.add_parameter(name='ao_output_type',
+                           label='ao output type',
+                           set_cmd=lambda x: setattr(chan, "ao_output_type", x),
+                           get_cmd=lambda: getattr(chan, "ao_output_type"),
+                           vals=vals.Enum(*constants.UsageTypeAO)
+                           )
+
+        self.add_parameter(name='ao_idle_output_behavior',
+                           label='ao idle output behavior',
+                           set_cmd=lambda x: setattr(chan, "ao_idle_output_behavior", x),
+                           get_cmd=lambda: getattr(chan, "ao_idle_output_behavior"),
+                           vals=vals.Enum(*constants.AOIdleOutputBehavior)
+                           )
+
+        self.add_parameter(name='ao_min',
+                           label='ao min value',
+                           unit='V',
+                           set_cmd=lambda x: setattr(chan, "ao_min", x),
+                           get_cmd=lambda: getattr(chan, "ao_min"),
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='ao_max',
+                           label='ao max value',
+                           unit='V',
+                           set_cmd=lambda x: setattr(chan, "ao_max", x),
+                           get_cmd=lambda: getattr(chan, "ao_max"),
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='ao_output_impedance',
+                           label='ao output impedance',
+                           unit='ohm',
+                           set_cmd=lambda x: setattr(chan, "ao_output_impedance", x),
+                           get_cmd=lambda: getattr(chan, "ao_output_impedance"),
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='ao_voltage_current_limit',
+                           label='ao voltage current limit',
+                           unit='A',
+                           set_cmd=lambda x: setattr(chan, "ao_voltage_current_limit", x),
+                           get_cmd=lambda: getattr(chan, "ao_voltage_current_limit"),
+                           vals=vals.Numbers()
+                           )
+
+
 class NIDAQ_Task(InstrumentChannel):
     def __init__(self, parent: Instrument, name):
         super().__init__(parent, name)
@@ -337,6 +421,11 @@ class NIDAQ_Task(InstrumentChannel):
         chan = NIDAQ_AIVoltChannel(self, channame, chanid, terminal_config, min_val, max_val)
         self.add_submodule(channame, chan)
 
+    def add_ao_volt_channel(self, channame, chanid,
+                            min_val=-10, max_val=10):
+        chan = NIDAQ_AOVoltChannel(self, channame, chanid, min_val, max_val)
+        self.add_submodule(channame, chan)
+
     def add_sample_clock(self, rate, source="",
                          active_edge=Edge.RISING,
                          sample_mode=AcquisitionType.FINITE,
@@ -354,6 +443,9 @@ class NIDAQ_Task(InstrumentChannel):
         clock = NIDAQ_ImplicitClock(self, clockname, sample_mode, samps_per_chan)
         self.add_submodule(clockname, clock)
         self.N_samps = samps_per_chan
+
+    def write(self, *args, **kwargs):
+        self._task.write(*args, **kwargs)
 
     def start(self):
         self._task.start()
@@ -391,7 +483,7 @@ class PXI_6251(Instrument):
         self._ai_channels = self._device.ai_physical_chans.channel_names
         self._ao_channels = self._device.ao_physical_chans.channel_names
         self._ci_channels = self._device.ci_physical_chans.channel_names
-        self._co_channels = self._device.ci_physical_chans.channel_names
+        self._co_channels = self._device.co_physical_chans.channel_names
         self._di_lines = self._device.di_lines.channel_names
         self._di_ports = self._device.di_ports.channel_names
         self._do_lines = self._device.do_lines.channel_names
@@ -420,3 +512,152 @@ class PXI_6251(Instrument):
     def close_task(self, taskname):
         self.submodules[taskname]._task.close()
         del self.submodules[taskname]
+
+
+
+class MetaXYScannerDriver(Instrument):
+    """
+    QCoDeS meta driver creating an XY scanner driver using 2 analog outputs from an NI PXI 6251 DAQ card.
+
+    Requires nidaqmx module to be installed (pip install nidaqmx).
+    """
+
+    def __init__(self, name: str, daq_card_name: str, xy_channel_names: Tuple[str, str],
+                 clock_rate:float, scan_speed_V_per_s:float, **kwargs):
+        """
+        Create an instance of the instrument.
+
+        Args:
+            name (str): The internal QCoDeS name of the instrument
+            daq_card_name (str): The device name from the list
+                system = nidaqmx.system.System.local()
+                [device.name for device in system.devices]
+        """
+
+        super().__init__(name, **kwargs)
+
+        self._daq_card = PXI_6251(daq_card_name, **kwargs)
+
+        self._daq_card.add_task("ao_task")
+
+        self._daq_card.ao_task.add_ao_volt_channel('X', xy_channel_names[0])
+        self._daq_card.ao_task.add_ao_volt_channel('Y', xy_channel_names[1])
+
+        self._daq_card.ao_task._task.out_stream.regen_mode = RegenerationMode.DONT_ALLOW_REGENERATION
+
+        self._daq_card.ao_task.add_sample_clock(clock_rate, sample_mode=AcquisitionType.FINITE)
+
+        self._daq_card.ao_task._task.register_done_event(self.task_done_callback)
+
+        self._pos = (None, None)
+        self._target_pos = (None, None)
+
+        self.add_parameter(name='x_min',
+                           label='x min value',
+                           unit='V',
+                           set_cmd=self._daq_card.ao_task.X.ao_min.set,
+                           get_cmd=self._daq_card.ao_task.X.ao_min.get,
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='x_max',
+                           label='x max value',
+                           unit='V',
+                           set_cmd=self._daq_card.ao_task.X.ao_max.set,
+                           get_cmd=self._daq_card.ao_task.X.ao_max.get,
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='y_min',
+                           label='y min value',
+                           unit='V',
+                           set_cmd=self._daq_card.ao_task.Y.ao_min.set,
+                           get_cmd=self._daq_card.ao_task.Y.ao_min.get,
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='y_max',
+                           label='y max value',
+                           unit='V',
+                           set_cmd=self._daq_card.ao_task.Y.ao_max.set,
+                           get_cmd=self._daq_card.ao_task.Y.ao_max.get,
+                           vals=vals.Numbers()
+                           )
+
+        self.add_parameter(name='scan_speed',
+                           parameter_class=ManualParameter,
+                           initial_value=scan_speed_V_per_s,
+                           label='scanning speed',
+                           unit='V_per_s',
+                           vals=vals.MultiType(vals.Numbers(), vals.Enum(None))
+                           )
+
+        self.add_parameter(name='samp_rate',
+                           label='sampling rate',
+                           unit='samples/s',
+                           set_cmd=self._daq_card.ao_task.clock.samp_clk_rate.set,
+                           get_cmd=self._daq_card.ao_task.clock.samp_clk_rate.get,
+                           vals=vals.Numbers(min_value=0, max_value=self._daq_card.ao_task._task.timing.samp_clk_max_rate)
+                           )
+        
+        self.add_parameter(name='N_samp',
+                           label='N samples',
+                           unit='',
+                           set_cmd=self._daq_card.ao_task.clock.samp_quant_samp_per_chan.set,
+                           get_cmd=self._daq_card.ao_task.clock.samp_quant_samp_per_chan.get,
+                           vals=vals.Ints(min_value=0)
+                           )
+
+    def go_to(self, pos: Tuple[float, float]):
+        self.N_samp.set(2)
+        self._daq_card.ao_task.write([[pos[0],]*2,[pos[1],]*2], auto_start=False)   # weird behavior of daq card with List instead of List[List] input to write
+        self._daq_card.ao_task.start()
+        self._target_pos = pos      
+
+    def go_to_smooth(self, pos: Tuple[float, float]):
+        if self.scan_speed() is None or self._pos == (None, None):
+            self.go_to(pos)
+        else:
+            traj = trajectory(pos, self._pos, self.scan_speed(), 1/self.samp_rate())
+            self.N_samp.set(traj.shape[1])
+            self._daq_card.ao_task.write(traj, auto_start=False)
+            self._daq_card.ao_task.start()
+            self._target_pos = pos
+
+    def scan_init(self, Vx_list, Vy_list):
+        if self._pos == (None, None):
+            self.go_to((min(Vx_list), min(Vy_list)))
+        else:
+            self.go_to_smooth((min(Vx_list), min(Vy_list)))
+        while not self.is_done_moving():
+            pass
+
+        self.go_to_smooth((max(Vx_list), min(Vy_list)))
+        while not self.is_done_moving():
+            pass
+
+        self.go_to_smooth((max(Vx_list), max(Vy_list)))
+        while not self.is_done_moving():
+            pass
+
+        self.go_to_smooth((min(Vx_list), max(Vy_list)))
+        while not self.is_done_moving():
+            pass
+
+        self.go_to_smooth((min(Vx_list), min(Vy_list)))
+        while not self.is_done_moving():
+            pass
+
+    def is_done_moving(self):
+        return self._daq_card.ao_task._task.is_task_done() and self._pos == self._target_pos
+
+    def task_done_callback(self, task_handle, status, callback_data):
+        self._daq_card.ao_task.stop()
+        self._pos = self._target_pos
+        return 0
+        
+    def stop(self):
+        return self._daq_card.ao_task.stop()
+    
+
+
