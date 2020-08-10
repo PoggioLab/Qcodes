@@ -180,7 +180,7 @@ class Experiment(Sized):
 
 # public api
 
-def experiments(conn: Optional[ConnectionPlus]=None) -> List[Experiment]:
+def experiments(conn: Optional[ConnectionPlus] = None) -> List[Experiment]:
     """
     List all the experiments in the container (database file from config)
 
@@ -191,8 +191,8 @@ def experiments(conn: Optional[ConnectionPlus]=None) -> List[Experiment]:
     Returns:
         All the experiments in the container
     """
-    log.info("loading experiments from {}".format(conn))
-    conn = conn or connect(get_DB_location(), get_DB_debug())
+    conn = conn_from_dbpath_or_conn(conn=conn, path_to_db=None)
+    log.info("loading experiments from {}".format(conn.path_to_dbfile))
     rows = get_experiments(conn)
     experiments = []
     for row in rows:
@@ -223,7 +223,8 @@ def new_experiment(name: str,
                       conn=conn)
 
 
-def load_experiment(exp_id: int, conn: Optional[ConnectionPlus]=None) -> Experiment:
+def load_experiment(exp_id: int,
+                    conn: Optional[ConnectionPlus] = None) -> Experiment:
     """
     Load experiment with the specified id (from database file from config)
 
@@ -237,7 +238,6 @@ def load_experiment(exp_id: int, conn: Optional[ConnectionPlus]=None) -> Experim
     """
     if not isinstance(exp_id, int):
         raise ValueError('Experiment ID must be an integer')
-    conn = conn or connect(get_DB_location())    
     return Experiment(exp_id=exp_id,
                       conn=conn)
 
